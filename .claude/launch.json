@@ -2,13 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "visiongate-headless",
+      "name": "cartelgate-headless",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "set VISIONGATE_HOME=%TEMP%\\vg2-e2e&& VisionGateGo.exe --headless --port 8419"],
+      "runtimeArgs": ["/c", "set CARTELGATE_HOME=%TEMP%\cg-e2e&& CartelGate.exe --headless --port 8419"],
       "port": 8419
     },
     {
-      "name": "visiongate-attach",
+      "name": "cartelgate-attach",
       "url": "http://127.0.0.1:8317",
       "port": 8317
     }

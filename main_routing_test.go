@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"visiongate/internal/config"
+	"cartelgate/internal/config"
 )
 
 func routingCfg() *config.Config {

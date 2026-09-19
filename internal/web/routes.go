@@ -31,6 +31,8 @@ func (a *App) control(w http.ResponseWriter, r *http.Request, path string) {
 		a.apiGenerateKey(w, r)
 	case path == "/account-to-provider" && r.Method == http.MethodPost:
 		a.apiAccountToProvider(w, r)
+	case path == "/provider-models" && r.Method == http.MethodPost:
+		a.apiProviderModels(w, r)
 	case strings.HasPrefix(path, "/cliproxy/api/"):
 		a.apiClipApi(w, r)
 	case path == "/cliproxy/oauth/start":

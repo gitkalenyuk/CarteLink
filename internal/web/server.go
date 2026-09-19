@@ -1,4 +1,4 @@
-// Package web serves the VisionGateGo UI and control API — the equivalent of
+// Package web serves the CartelGate UI and control API:
 // the Electron main process's IPC surface: config get/save, providers CRUD,
 // metrics, OAuth pass-through to the embedded CLIProxyAPI Management API.
 // In the embedded build the same CLIProxyAPI server hosts these routes.
@@ -17,8 +17,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"visiongate/internal/cliproxy"
-	"visiongate/internal/config"
+	"cartelgate/internal/cliproxy"
+	"cartelgate/internal/config"
 )
 
 type anyMap = map[string]any
@@ -165,7 +165,7 @@ func (a *App) SyncYAML(cfg *config.Config) error {
 		seen := map[string]bool{}
 		merged := make([]string, 0, len(cfg.Cliproxy.APIKeys)+2)
 		for _, k := range append(append([]string{}, cfg.Cliproxy.APIKeys...), cliproxy.ReadAPIKeys(path)...) {
-			if k == "" || k == "vg-cliproxy-default-key" || seen[k] {
+			if k == "" || k == "cg-default-key" || k == "vg-cliproxy-default-key" || seen[k] {
 				continue
 			}
 			seen[k] = true

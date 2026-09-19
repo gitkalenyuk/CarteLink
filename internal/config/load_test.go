@@ -11,7 +11,7 @@ import (
 func withHome(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("VISIONGATE_HOME", dir)
+	t.Setenv("CARTELGATE_HOME", dir)
 	return dir
 }
 
@@ -80,5 +80,45 @@ func TestClone_IsDeep(t *testing.T) {
 	cp.Cliproxy.APIKeys[0] = "changed"
 	if c.Routing.ModelMap["a"] != "b" || c.Cliproxy.APIKeys[0] != "k1" {
 		t.Errorf("Clone shares memory with the original")
+	}
+}
+
+func TestMigrateLegacyHome_CopiesOnce(t *testing.T) {
+	base := t.TempDir()
+	from := filepath.Join(base, "old")
+	to := filepath.Join(base, "new")
+	_ = os.MkdirAll(filepath.Join(from, "data", "cliproxy", "auths"), 0o755)
+	_ = os.MkdirAll(filepath.Join(from, "data", "EBWebView"), 0o755)
+	_ = os.WriteFile(filepath.Join(from, "config.json"), []byte(`{"apiKey":"vg-1"}`), 0o644)
+	_ = os.WriteFile(filepath.Join(from, "data", "cliproxy", "auths", "a.json"), []byte(`{}`), 0o644)
+	_ = os.WriteFile(filepath.Join(from, "data", "EBWebView", "big"), []byte(`x`), 0o644)
+	_ = os.WriteFile(filepath.Join(from, "app.log"), []byte(`log`), 0o644)
+	migrateLegacyHome(from, to)
+	if _, err := os.Stat(filepath.Join(to, "data", "cliproxy", "auths", "a.json")); err != nil {
+		t.Fatalf("auth file not migrated: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(to, "data", "EBWebView")); !os.IsNotExist(err) {
+		t.Errorf("webview profile should be skipped")
+	}
+	if _, err := os.Stat(filepath.Join(to, "app.log")); !os.IsNotExist(err) {
+		t.Errorf("logs should be skipped")
+	}
+	// Second run must not overwrite the new location.
+	_ = os.WriteFile(filepath.Join(to, "config.json"), []byte(`{"apiKey":"cg-2"}`), 0o644)
+	migrateLegacyHome(from, to)
+	b, _ := os.ReadFile(filepath.Join(to, "config.json"))
+	if !strings.Contains(string(b), "cg-2") {
+		t.Errorf("migration overwrote an existing home")
+	}
+}
+
+func TestNormalize_GeneratesPrefixedSecrets(t *testing.T) {
+	c := Defaults()
+	Normalize(c)
+	if !strings.HasPrefix(c.APIKey, KeyPrefix) || !strings.HasPrefix(c.Cliproxy.ManagementSecret, SecretPrefix) {
+		t.Errorf("prefixes: key=%s secret=%s", c.APIKey, c.Cliproxy.ManagementSecret)
+	}
+	if len(c.Cliproxy.APIKeys) != 1 || c.Cliproxy.APIKeys[0] != c.APIKey {
+		t.Errorf("engine key should mirror the gateway key: %v", c.Cliproxy.APIKeys)
 	}
 }

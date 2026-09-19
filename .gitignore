@@ -1,6 +1,7 @@
 # build outputs
 *.exe
 dist/
+cg-*
 vgate-*
 # runtime data
 data/

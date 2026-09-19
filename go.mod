@@ -1,4 +1,4 @@
-module visiongate
+module cartelgate
 
 go 1.27.1
 

@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.0.0 — CartelGate
+
+Rebrand of VisionGateGo to **CartelGate** (by YouTube Cartel) plus the Providers rework.
+
+- **Rebrand:** new name, logo, crimson/amber dark theme, `CartelGate.exe`,
+  `CARTELGATE_HOME` (the legacy `VISIONGATE_HOME` still works), data dir
+  `%AppData%\CartelGate` with automatic one-time migration from `VisionGateGo`
+  (auths + settings; logs and the WebView2 cache are skipped). Generated keys
+  are `cg-…`, management secrets `cg-mgmt-…`; old `vg-…` keys keep working.
+- **Provider presets:** 70+ OpenAI-compatible endpoints (OpenAI, Anthropic
+  compat, Gemini compat, xAI, Mistral, DeepSeek, OpenRouter, Groq, Cerebras,
+  SambaNova, Together, Fireworks, DeepInfra, NVIDIA NIM, GitHub Models,
+  Hugging Face, Vercel AI Gateway, Azure, Bedrock, Cloudflare, Qwen, GLM, Kimi,
+  MiniMax, SiliconFlow, Ollama, LM Studio, vLLM, llama.cpp…) with search,
+  groups, key links and starter model lists.
+- **Providers are editable:** edit name/URL/keys/models/prefix/headers, enable/
+  disable, delete. «Підтягнути список моделей» fetches `<base-url>/models`
+  through the new `/api/provider-models` endpoint. Several keys per provider
+  (one per line) rotate inside the engine.
+- **Bug fixes (Providers):** the engine returns `{"openai-compatibility": […]}`,
+  so the list never rendered; adding a provider used PUT (which *replaces* the
+  list) and silently wiped the previous ones. Both fixed; engine providers'
+  aliases now show up in the Models page dropdowns.
+- **OAuth window:** Edge/Chrome is launched with a dedicated temporary
+  `--user-data-dir` in private mode, so it is a separate process — clean
+  session every time and the window really closes when the login completes
+  (before, the kill hit a stub process when the browser was already open).
+  The About text now describes the real behaviour.
+- **Config cleanup:** dead Electron-era fields (port, autoStart, startMinimized,
+  theme, accent, vision, provider binaryPath) removed from `config.json`.
+
 ## 1.0.0
 
 Clean restart of the Go project (VisionGateGo2). Fixes on top of the last 1.0.4 build:

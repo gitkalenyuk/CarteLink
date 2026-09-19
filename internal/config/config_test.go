@@ -7,18 +7,18 @@ import (
 )
 
 func TestHome_PortableMode(t *testing.T) {
-	// Test VISIONGATE_HOME override
-	orig := os.Getenv("VISIONGATE_HOME")
-	defer os.Setenv("VISIONGATE_HOME", orig)
+	// Test CARTELGATE_HOME override
+	orig := os.Getenv("CARTELGATE_HOME")
+	defer os.Setenv("CARTELGATE_HOME", orig)
 
 	tempDir := t.TempDir()
-	os.Setenv("VISIONGATE_HOME", tempDir)
+	os.Setenv("CARTELGATE_HOME", tempDir)
 	if got := Home(); got != tempDir {
-		t.Errorf("Home() with VISIONGATE_HOME = %q, want %q", got, tempDir)
+		t.Errorf("Home() with CARTELGATE_HOME = %q, want %q", got, tempDir)
 	}
 
 	// Test default or portable
-	os.Unsetenv("VISIONGATE_HOME")
+	os.Unsetenv("CARTELGATE_HOME")
 	gotDefault := Home()
 	if gotDefault == "" {
 		t.Errorf("Home() returned empty string")

@@ -1,4 +1,4 @@
-// Management/OAuth passthrough for the embedded engine. The VisionGate UI
+// Management/OAuth passthrough for the embedded engine. The CartelGate UI
 // calls /api/cliproxy/... on this server; we rewrite those to the embedded
 // service's /v0/management/* endpoints and add the X-Management-Key header
 // server-side, mirroring the Electron connector's cliproxy:api IPC.
@@ -12,14 +12,17 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"visiongate/internal/config"
+	"cartelgate/internal/config"
 )
 
 var browserFlows = map[string]bool{
@@ -157,55 +160,183 @@ func (a *App) apiClipOauthCancel(w http.ResponseWriter, r *http.Request) {
 	writeMgmtResult(w, status, raw, "application/json")
 }
 
-// openCleanBrowser launches an isolated, private/incognito browser window
-// so that previously logged in OAuth accounts do not pollute the session.
+// oauthProfileDir is a throwaway browser profile used for OAuth logins. A
+// dedicated --user-data-dir makes Edge/Chrome start a *separate* browser
+// process even when the user's own browser is already open, so (1) the
+// window has no cookies from earlier logins and (2) killing the process
+// really closes the window when the login completes.
+func oauthProfileDir() string {
+	dir := filepath.Join(config.DataDir(), "oauth-browser")
+	_ = os.RemoveAll(dir) // always start from a clean session
+	_ = os.MkdirAll(dir, 0o755)
+	return dir
+}
+
+// openCleanBrowser launches an isolated private browser window so that
+// previously logged in OAuth accounts do not pollute the session.
 func openCleanBrowser(u string) *exec.Cmd {
+	profile := oauthProfileDir()
+	chromiumArgs := func(private string) []string {
+		return []string{
+			"--user-data-dir=" + profile,
+			"--no-first-run", "--no-default-browser-check",
+			private, "--new-window", u,
+		}
+	}
+	try := func(bin string, args ...string) *exec.Cmd {
+		cmd := exec.Command(bin, args...)
+		if err := cmd.Start(); err != nil {
+			return nil
+		}
+		return cmd
+	}
 	switch runtime.GOOS {
 	case "windows":
-		edgePaths := []string{
-			`C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`,
-			`C:\Program Files\Microsoft\Edge\Application\msedge.exe`,
+		pf := os.Getenv("ProgramFiles")
+		pf86 := os.Getenv("ProgramFiles(x86)")
+		local := os.Getenv("LocalAppData")
+		candidates := []struct{ bin, private string }{
+			{filepath.Join(pf86, `Microsoft\Edge\Application\msedge.exe`), "--inprivate"},
+			{filepath.Join(pf, `Microsoft\Edge\Application\msedge.exe`), "--inprivate"},
+			{filepath.Join(pf, `Google\Chrome\Application\chrome.exe`), "--incognito"},
+			{filepath.Join(pf86, `Google\Chrome\Application\chrome.exe`), "--incognito"},
+			{filepath.Join(local, `Google\Chrome\Application\chrome.exe`), "--incognito"},
+			{filepath.Join(pf, `BraveSoftware\Brave-Browser\Applicationrave.exe`), "--incognito"},
+			{"msedge.exe", "--inprivate"},
+			{"chrome.exe", "--incognito"},
 		}
-		for _, p := range edgePaths {
-			cmd := exec.Command(p, "--inprivate", "--new-window", u)
-			if err := cmd.Start(); err == nil {
+		for _, c := range candidates {
+			if cmd := try(c.bin, chromiumArgs(c.private)...); cmd != nil {
 				return cmd
 			}
 		}
-		chromePaths := []string{
-			`C:\Program Files\Google\Chrome\Application\chrome.exe`,
-			`C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`,
-		}
-		for _, p := range chromePaths {
-			cmd := exec.Command(p, "--incognito", "--new-window", u)
-			if err := cmd.Start(); err == nil {
-				return cmd
-			}
-		}
-		// Fallback to msedge in PATH
-		cmd := exec.Command("msedge.exe", "--inprivate", "--new-window", u)
-		if err := cmd.Start(); err == nil {
-			return cmd
-		}
-		// Fallback to default browser
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", u)
+		// Fallback to the default browser (cannot be closed automatically).
+		cmd := exec.Command("rundll32", "url.dll,FileProtocolHandler", u)
 		_ = cmd.Start()
 		return cmd
 	case "darwin":
-		cmd := exec.Command("open", "-na", "Google Chrome", "--args", "--incognito", u)
-		if err := cmd.Start(); err == nil {
-			return cmd
+		for _, app := range []string{
+			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+			"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+			"/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+		} {
+			if cmd := try(app, chromiumArgs("--incognito")...); cmd != nil {
+				return cmd
+			}
 		}
-		cmd = exec.Command("open", u)
+		cmd := exec.Command("open", u)
 		_ = cmd.Start()
 		return cmd
 	default:
-		cmd := exec.Command("google-chrome", "--incognito", "--new-window", u)
-		if err := cmd.Start(); err == nil {
-			return cmd
+		for _, bin := range []string{"google-chrome", "chromium", "chromium-browser", "microsoft-edge", "brave-browser"} {
+			if cmd := try(bin, chromiumArgs("--incognito")...); cmd != nil {
+				return cmd
+			}
 		}
-		cmd = exec.Command("xdg-open", u)
+		cmd := exec.Command("xdg-open", u)
 		_ = cmd.Start()
 		return cmd
 	}
+}
+
+// providerModelsResp is what apiProviderModels returns.
+type providerModelsResp struct {
+	OK     bool     `json:"ok"`
+	Models []string `json:"models"`
+	Error  string   `json:"error,omitempty"`
+}
+
+// apiProviderModels: POST /api/provider-models {baseUrl, apiKey, headers}
+// fetches <baseUrl>/models from an OpenAI-compatible upstream and returns
+// the model ids, so the Providers page can fill the model list for the user.
+func (a *App) apiProviderModels(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		BaseURL string            `json:"baseUrl"`
+		APIKey  string            `json:"apiKey"`
+		Headers map[string]string `json:"headers"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		jsonWrite(w, http.StatusBadRequest, providerModelsResp{Error: "invalid body"})
+		return
+	}
+	base := strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
+	u, err := url.Parse(base)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		jsonWrite(w, http.StatusBadRequest, providerModelsResp{Error: "base URL must start with http:// or https://"})
+		return
+	}
+	hreq, err := http.NewRequest(http.MethodGet, base+"/models", nil)
+	if err != nil {
+		jsonWrite(w, http.StatusBadRequest, providerModelsResp{Error: err.Error()})
+		return
+	}
+	if k := strings.TrimSpace(req.APIKey); k != "" {
+		hreq.Header.Set("Authorization", "Bearer "+k)
+	}
+	hreq.Header.Set("Accept", "application/json")
+	for k, v := range req.Headers {
+		if k = strings.TrimSpace(k); k != "" {
+			hreq.Header.Set(k, v)
+		}
+	}
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Do(hreq)
+	if err != nil {
+		jsonWrite(w, http.StatusBadGateway, providerModelsResp{Error: err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		msg := strings.TrimSpace(string(raw))
+		if len(msg) > 300 {
+			msg = msg[:300] + "…"
+		}
+		jsonWrite(w, http.StatusBadGateway, providerModelsResp{Error: fmt.Sprintf("upstream %d: %s", resp.StatusCode, msg)})
+		return
+	}
+	jsonWrite(w, http.StatusOK, providerModelsResp{OK: true, Models: parseModelIDs(raw)})
+}
+
+// parseModelIDs extracts model ids from the common list shapes:
+// {"data":[{"id":..}]}, {"models":[{"id"|"name":..}]}, or a bare array.
+func parseModelIDs(raw []byte) []string {
+	var any1 any
+	if err := json.Unmarshal(raw, &any1); err != nil {
+		return []string{}
+	}
+	var items []any
+	switch v := any1.(type) {
+	case []any:
+		items = v
+	case map[string]any:
+		for _, key := range []string{"data", "models", "items"} {
+			if arr, ok := v[key].([]any); ok {
+				items = arr
+				break
+			}
+		}
+	}
+	seen := map[string]bool{}
+	out := make([]string, 0, len(items))
+	for _, it := range items {
+		var id string
+		switch m := it.(type) {
+		case string:
+			id = m
+		case map[string]any:
+			if s, ok := m["id"].(string); ok {
+				id = s
+			} else if s, ok := m["name"].(string); ok {
+				id = s
+			}
+		}
+		id = strings.TrimSpace(id)
+		if id != "" && !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
+	return out
 }

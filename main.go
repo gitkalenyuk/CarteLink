@@ -1,7 +1,7 @@
-// VisionGateGo — one process, one port, one window. The original CLIProxyAPI
+// CartelGate — one process, one port, one window. The original CLIProxyAPI
 // source code (third_party/CLIProxyAPI) is compiled into this binary and runs
 // as the server: the same /v1/*, /v1beta/*, /v0/management/* surface as
-// upstream, plus the VisionGate dark GUI mounted on the same engine. On
+// upstream, plus the CartelGate dark GUI mounted on the same engine. On
 // Windows the app opens a desktop window (WebView2); with --headless (or on
 // other platforms) it stays a console server and opens the default browser.
 package main
@@ -33,10 +33,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 
-	"visiongate/internal/cliproxy"
-	"visiongate/internal/config"
-	"visiongate/internal/desktop"
-	"visiongate/internal/web"
+	"cartelgate/internal/cliproxy"
+	"cartelgate/internal/config"
+	"cartelgate/internal/desktop"
+	"cartelgate/internal/web"
 )
 
 func main() {
@@ -49,7 +49,7 @@ func main() {
 
 	cfg, err := config.Load()
 	if err != nil && !errors.Is(err, config.ErrCorrupt) {
-		desktop.Alert("VisionGateGo", "Не вдалось прочитати налаштування: "+err.Error())
+		desktop.Alert("CartelGate", "Не вдалось прочитати налаштування: "+err.Error())
 		os.Exit(1)
 	}
 	configWarning := ""
@@ -91,21 +91,21 @@ func main() {
 		movedFrom = cfg.Cliproxy.Port
 		cfg.Cliproxy.Port = p
 		if *portOverride > 0 {
-			log.Printf("port %d busy — VisionGateGo moved to %d (not saved: --port override)", movedFrom, p)
+			log.Printf("port %d busy — CartelGate moved to %d (not saved: --port override)", movedFrom, p)
 		} else if err := cfg.Save(); err != nil {
 			log.Println("save config after port move:", err)
 		} else {
-			log.Printf("port %d busy — VisionGateGo moved to %d (saved)", movedFrom, p)
+			log.Printf("port %d busy — CartelGate moved to %d (saved)", movedFrom, p)
 		}
 	}
 
-	// The embedded service owns the listener; VisionGate mounts on top of it.
+	// The embedded service owns the listener; CartelGate mounts on top of it.
 	port := cfg.Cliproxy.Port
 	host := cfg.Cliproxy.Host
 	cfgPath := web.EngineCfgPath()
 
 	// Keep config.yaml aligned with our settings (management edits preserved:
-	// only the keys VisionGate owns are rewritten).
+	// only the keys CartelGate owns are rewritten).
 	if err := app.SyncYAML(cfg); err != nil {
 		fail(useGUI, "config.yaml", err)
 	}
@@ -113,7 +113,7 @@ func main() {
 		log.Println("save config:", err)
 	}
 
-	// Mount VisionGate GUI + control API on the shared Gin engine.
+	// Mount CartelGate GUI + control API on the shared Gin engine.
 	mount := func(engine *gin.Engine) {
 		engine.Any("/ui/*path", gin.WrapH(http.StripPrefix("/ui", web.UIHandler())))
 		engine.Any("/api/*path", gin.WrapH(web.ControlHandler(app)))
@@ -156,7 +156,7 @@ func main() {
 			c.AbortWithStatusJSON(503, gin.H{
 				"error": gin.H{
 					"type":    "paused",
-					"message": "VisionGate is stopped — press Start in the app.",
+					"message": "CartelGate is stopped — press Start in the app.",
 				},
 			})
 			return
@@ -238,7 +238,7 @@ func main() {
 	if configWarning != "" {
 		log.Println(configWarning)
 		if useGUI {
-			desktop.Alert("VisionGateGo", configWarning)
+			desktop.Alert("CartelGate", configWarning)
 		} else {
 			fmt.Fprintln(os.Stderr, configWarning)
 		}
@@ -247,10 +247,10 @@ func main() {
 	if useGUI {
 		// The desktop app: one window, opened automatically. Closing the
 		// window quits the app.
-		err := desktop.RunMainWindow(uiURL, "VisionGate", config.DataDir())
+		err := desktop.RunMainWindow(uiURL, "CartelGate", config.DataDir())
 		if err != nil && err != desktop.ErrClosed {
 			log.Println("window creation failed, falling back to browser:", err)
-			desktop.Alert("VisionGate", "Microsoft Edge WebView2 runtime не знайдено на цьому комп'ютері.\n\nVisionGate відкриється у вашому стандартному браузері.")
+			desktop.Alert("CartelGate", "Microsoft Edge WebView2 runtime не знайдено на цьому комп'ютері.\n\nCartelGate відкриється у вашому стандартному браузері.")
 			useGUI = false
 		} else {
 			shuttingDown.Store(true)
@@ -262,7 +262,7 @@ func main() {
 
 	// Console mode (non-Windows, or --headless): print the map and open the
 	// default browser unless headless was requested.
-	fmt.Println("VisionGateGo — one server, one port (CLIProxyAPI embedded + VisionGate UI)")
+	fmt.Println("CartelGate — one server, one port (CLIProxyAPI embedded + CartelGate UI)")
 	fmt.Println("  UI:         " + uiURL)
 	fmt.Println("  OpenAI API: " + base + "/v1/chat/completions")
 	fmt.Println("  Anthropic:  " + base + "/v1/messages")
@@ -401,7 +401,7 @@ func rewriteModel(c *gin.Context, app *web.App) {
 			"type": "error",
 			"error": gin.H{
 				"type":    "invalid_request_error",
-				"message": "model " + targetModel + " is blocked by the VisionGate model blacklist",
+				"message": "model " + targetModel + " is blocked by the CartelGate model blacklist",
 			},
 		})
 		return
@@ -548,11 +548,11 @@ func portAvailable(host string, port int) bool {
 func fail(useGUI bool, what string, err error) {
 	log.Printf("%s failed: %v", what, err)
 	msg := fmt.Sprintf(
-		"VisionGateGo не зміг стартувати.\n\n%s: %v\n\nПовний лог: %s",
+		"CartelGate не зміг стартувати.\n\n%s: %v\n\nПовний лог: %s",
 		what, err, filepath.Join(config.CliproxyLogsDir(), "app.log"),
 	)
 	if useGUI {
-		desktop.Alert("VisionGateGo", msg)
+		desktop.Alert("CartelGate", msg)
 	} else {
 		fmt.Fprintln(os.Stderr, msg)
 	}
@@ -761,7 +761,7 @@ func handleAugmentedModels(c *gin.Context, app *web.App) {
 		}
 	}
 
-	// 3. Add models from active providers in VisionGate config
+	// 3. Add models from active providers in CartelGate config
 	cfg := app.CurrentConfig()
 	if cfg != nil {
 		for _, p := range cfg.Providers {

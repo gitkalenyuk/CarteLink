@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"visiongate/internal/cliproxy"
-	"visiongate/internal/config"
+	"cartelgate/internal/cliproxy"
+	"cartelgate/internal/config"
 )
 
 func itoa(n int) string { return strconv.Itoa(n) }

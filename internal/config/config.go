@@ -1,6 +1,4 @@
-// Package config holds VisionGateGo's persisted configuration.
-// It mirrors the VisionGate (Electron) config schema so configs and habits
-// transfer 1:1: same fields, same defaults, same normalization rules.
+// Package config holds CartelGate's persisted configuration (config.json).
 package config
 
 import (
@@ -9,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -17,9 +16,22 @@ import (
 )
 
 // Version is the app version reported in /health and the UI.
-const Version = "1.0.0"
+const Version = "2.0.0"
 
-// Routing mirrors the Electron app's routing section.
+// AppName is the product name used in window titles, logs and messages.
+const AppName = "CartelGate"
+
+// KeyPrefix / SecretPrefix mark generated client keys and management secrets.
+const (
+	KeyPrefix    = "cg-"
+	SecretPrefix = "cg-mgmt-"
+)
+
+// legacyHomeName is the data directory of the previous product name; it is
+// copied over on first start so existing accounts and settings survive.
+const legacyHomeName = "VisionGateGo"
+
+// Routing holds the model-mapping rules applied by the gateway middleware.
 type Routing struct {
 	DefaultProviderID string            `json:"defaultProviderId"`
 	DefaultModel      string            `json:"defaultModel"`
@@ -31,28 +43,17 @@ type Routing struct {
 	} `json:"tiers"`
 }
 
-// Vision mirrors the vision pipeline section.
-type Vision struct {
-	Enabled    bool   `json:"enabled"`
-	Mode       string `json:"mode"` // "describe"
-	ProviderID string `json:"providerId"`
-	Model      string `json:"model"`
-	Prompt     string `json:"prompt"`
-}
-
-// Cliproxy mirrors the CLIProxyAPI sidecar section.
+// Cliproxy is the embedded-engine section: where it listens and its keys.
 type Cliproxy struct {
-	Enabled          bool     `json:"enabled"`
-	AutoStart        bool     `json:"autoStart"`
 	Port             int      `json:"port"`
 	Host             string   `json:"host"`
 	APIKeys          []string `json:"apiKeys"`
-	BinaryPath       string   `json:"binaryPath"`
 	ExtraConfigYAML  string   `json:"extraConfigYAML,omitempty"` // raw YAML passthrough for advanced users
 	ManagementSecret string   `json:"managementSecret"`
 }
 
-// Provider mirrors normProvider() in the Electron main.js.
+// Provider is a user-visible model source: an OAuth account transferred from
+// the Accounts page (BaseURL "embedded://cliproxy") or a manual entry.
 type Provider struct {
 	ID           string            `json:"id"`
 	Label        string            `json:"label"`
@@ -66,26 +67,24 @@ type Provider struct {
 
 // Config is the on-disk schema (config.json inside Home()).
 type Config struct {
-	Port           int        `json:"port"`
 	APIKey         string     `json:"apiKey"`
 	RequireKey     bool       `json:"requireKey"`
-	AutoStart      bool       `json:"autoStart"`
-	StartMinimized bool       `json:"startMinimized"`
-	Theme          string     `json:"theme"`
-	Accent         string     `json:"accent"`
 	Providers      []Provider `json:"providers"`
 	Routing        Routing    `json:"routing"`
-	Vision         Vision     `json:"vision"`
 	Cliproxy       Cliproxy   `json:"cliproxy"`
 	ModelBlacklist []string   `json:"modelBlacklist"`
 }
 
-// Home returns the app data root. VISIONGATE_HOME redirects everything —
-// lets a second copy run beside the first with its own settings (same trick
-// as the Electron app's userData override).
+// Home returns the app data root. CARTELGATE_HOME (or the legacy
+// VISIONGATE_HOME) redirects everything — lets a second copy run beside the
+// first with its own settings.
 // If an adjacent "data" directory or a ".portable" file exists next to the
 // executable, portable mode is auto-selected so everything stays self-contained.
+// On first start the previous product's data directory is copied over.
 func Home() string {
+	if h := strings.TrimSpace(os.Getenv("CARTELGATE_HOME")); h != "" {
+		return h
+	}
 	if h := strings.TrimSpace(os.Getenv("VISIONGATE_HOME")); h != "" {
 		return h
 	}
@@ -102,7 +101,54 @@ func Home() string {
 	if err != nil {
 		base = "."
 	}
-	return filepath.Join(base, "VisionGateGo")
+	home := filepath.Join(base, AppName)
+	migrateLegacyHome(filepath.Join(base, legacyHomeName), home)
+	return home
+}
+
+// migrateLegacyHome copies the old data directory to the new location once
+// (only when the new one does not exist yet). The old directory is left in
+// place so the previous build keeps working.
+func migrateLegacyHome(from, to string) {
+	if _, err := os.Stat(to); err == nil {
+		return
+	}
+	if fi, err := os.Stat(from); err != nil || !fi.IsDir() {
+		return
+	}
+	_ = copyTree(from, to)
+}
+
+func copyTree(src, dst string) error {
+	return filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(src, p)
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			// Skip the WebView2 profile: it is large and is recreated anyway.
+			if d.Name() == "EBWebView" {
+				return filepath.SkipDir
+			}
+			return os.MkdirAll(target, 0o755)
+		}
+		if strings.HasSuffix(d.Name(), ".log") || strings.HasSuffix(d.Name(), ".log.1") {
+			return nil
+		}
+		in, err := os.Open(p)
+		if err != nil {
+			return err
+		}
+		defer in.Close()
+		out, err := os.Create(target)
+		if err != nil {
+			return err
+		}
+		defer out.Close()
+		_, err = io.Copy(out, in)
+		return err
+	})
 }
 
 // ConfigPath is the main config file location.
@@ -110,9 +156,7 @@ func ConfigPath() string { return filepath.Join(Home(), "config.json") }
 
 func DataDir() string { return filepath.Join(Home(), "data") }
 
-func ErrorLogPath() string { return filepath.Join(DataDir(), "error.log") }
-
-// CliproxyDir is where sidecar files live: config.yaml, auths/, logs/.
+// CliproxyDir is where engine files live: config.yaml, auths/, logs/.
 func CliproxyDir() string     { return filepath.Join(DataDir(), "cliproxy") }
 func CliproxyAuthDir() string { return filepath.Join(CliproxyDir(), "auths") }
 func CliproxyLogsDir() string { return filepath.Join(CliproxyDir(), "logs") }
@@ -167,7 +211,7 @@ func (c *Config) Clone() *Config {
 	return out
 }
 
-// Save persists the config with 2-space indent (matches the Electron format).
+// Save persists the config with 2-space indent.
 func (c *Config) Save() error {
 	if err := os.MkdirAll(Home(), 0o755); err != nil {
 		return err
@@ -179,40 +223,26 @@ func (c *Config) Save() error {
 	return os.WriteFile(ConfigPath(), b, 0o644)
 }
 
-// Defaults mirrors DEFAULTS in the Electron main.js. The generated API key is
-// random, matching genKey() there ("vg-" + 48 hex chars).
+// Defaults returns a fresh config. The API key is generated on Normalize.
 func Defaults() *Config {
 	c := &Config{
-		Port:           8787,
 		RequireKey:     true,
-		AutoStart:      true,
-		Theme:          "dark",
-		Accent:         "#7c6cff",
 		Providers:      []Provider{},
 		ModelBlacklist: []string{},
 	}
 	c.Routing.ModelMap = map[string]string{}
-	c.Vision = Vision{Mode: "describe"}
 	c.Cliproxy = Cliproxy{Port: 8317, Host: "127.0.0.1", APIKeys: []string{}}
 	return c
 }
 
-// Normalize mirrors the load-time fixups: normProvider + normCliproxy.
+// NewKey generates a client key ("cg-" + 48 hex chars).
+func NewKey() string { return KeyPrefix + randomHex(24) }
+
+// Normalize applies load-time fixups: generated key, trimmed providers,
+// validated engine section.
 func Normalize(c *Config) {
-	if c.Port < 1 || c.Port > 65535 {
-		c.Port = 8787
-	}
 	if c.APIKey == "" {
-		c.APIKey = "vg-" + randomHex(24)
-	}
-	if c.Theme == "" {
-		c.Theme = "dark"
-	}
-	if c.Accent == "" {
-		c.Accent = "#7c6cff"
-	}
-	if c.Vision.Mode == "" {
-		c.Vision.Mode = "describe"
+		c.APIKey = NewKey()
 	}
 	if c.Routing.ModelMap == nil {
 		c.Routing.ModelMap = map[string]string{}
@@ -243,15 +273,15 @@ func Normalize(c *Config) {
 	c.ModelBlacklist = cleanStrings(c.ModelBlacklist)
 	c.Cliproxy = NormCliproxy(c.Cliproxy)
 	// Keep the engine's client keys aligned with the UI toggle: when the key
-	// is required but none were configured for the engine, use the VisionGate
+	// is required but none were configured for the engine, use the gateway
 	// key; when not required the engine accepts anything (empty api-keys).
 	if c.RequireKey && len(c.Cliproxy.APIKeys) == 0 && c.APIKey != "" {
 		c.Cliproxy.APIKeys = []string{c.APIKey}
 	}
 }
 
-// NormCliproxy mirrors normCliproxy() in the Electron main.js: trims fields,
-// validates the port, and generates the management secret on first use.
+// NormCliproxy trims fields, validates the port, and generates the
+// management secret on first use.
 func NormCliproxy(c Cliproxy) Cliproxy {
 	c.Host = strings.TrimSpace(c.Host)
 	if c.Host == "" {
@@ -261,10 +291,9 @@ func NormCliproxy(c Cliproxy) Cliproxy {
 		c.Port = 8317
 	}
 	c.APIKeys = cleanStrings(c.APIKeys)
-	c.BinaryPath = strings.TrimSpace(c.BinaryPath)
 	c.ManagementSecret = strings.TrimSpace(c.ManagementSecret)
 	if c.ManagementSecret == "" {
-		c.ManagementSecret = "vgcpa-" + randomHex(18)
+		c.ManagementSecret = SecretPrefix + randomHex(18)
 	}
 	return c
 }
@@ -296,7 +325,7 @@ func randomHex(n int) string {
 	return hex.EncodeToString(b)
 }
 
-// PortFrom parses a port string with a fallback (mirrors validPort(v, fb)).
+// PortFrom parses a port string with a fallback.
 func PortFrom(s string, fallback int) int {
 	n, err := strconv.Atoi(strings.TrimSpace(s))
 	if err != nil || n < 1 || n > 65535 {

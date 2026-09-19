@@ -3,16 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VisionGate</title>
+<title>CartelGate</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="app">
   <aside class="sidebar">
     <div class="brand">
-      <div class="brand-logo">◈</div>
+      <div class="brand-logo" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width="22" height="22"><path d="M6 26V12a10 10 0 0 1 20 0v14" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/><path d="M12 26V15M20 26V15" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/><path d="M3 26h26" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg>
+      </div>
       <div class="brand-text">
-        <div class="brand-name">VisionGate</div>
+        <div class="brand-name">Cartel<span>Gate</span></div>
+        <div class="brand-by">by YouTube Cartel</div>
         <span id="tbStatus" class="tb-pill off"><i class="dot"></i><span id="tbStatusText">зупинено</span></span>
       </div>
     </div>
@@ -26,7 +29,7 @@
       <button data-page="about"><span class="ic">ℹ</span> Про програму</button>
     </nav>
     <div class="sidebar-foot">
-      <div class="ver" id="sidebar-version">v1.0.0</div>
+      <div class="ver" id="sidebar-version">v2.0.0</div>
     </div>
   </aside>
 
@@ -103,30 +106,55 @@
     <section id="page-providers" class="page">
       <div class="view-head">
         <h1>Провайдери</h1>
-        <p class="sub">Список джерел моделей: OAuth-акаунти, перенесені з «Акаунтів», та OpenAI-сумісні апстріми з ключами.</p>
+        <p class="sub">Джерела моделей: будь-який OpenAI-сумісний API зі своїм ключем (70+ пресетів: OpenRouter, Groq, DeepSeek, Ollama…), рідні ключі Claude/Gemini/Codex і OAuth-акаунти зі сторінки «Акаунти». Все можна редагувати після додавання.</p>
       </div>
 
       <div class="card">
-        <div class="card-title">Акаунти-провайдери <span class="hint">перенесені зі сторінки «Акаунти»</span></div>
-        <div id="vg-prov-list" class="prov-cards"></div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">OpenAI-сумісні провайдери <span class="hint">живуть у рушії CLIProxyAPI</span></div>
-        <div id="prov-list" class="prov-cards"></div>
-        <h3 class="muted-h">Додати провайдера</h3>
-        <div class="grid">
-          <label>Назва <input id="prov-name" placeholder="my-provider"></label>
-          <label>Base URL <input id="prov-url" placeholder="https://api.example.com/v1"></label>
-          <label>API ключ <input id="prov-key" type="password" placeholder="sk-…"></label>
-          <label>Моделі <textarea id="prov-models" rows="3" placeholder="gpt-4o&#10;claude-3-5-sonnet=claude-sonnet"></textarea></label>
+        <div class="card-title">OpenAI-сумісні провайдери <span class="hint">живуть у рушії, зміни підхоплюються без перезапуску</span>
+          <button class="btn btn-mini right" id="prov-refresh">Оновити</button>
         </div>
-        <button id="prov-add" class="btn btn-accent">Додати провайдера</button>
-        <span id="prov-msg" class="msg"></span>
+        <div id="prov-list" class="prov-cards"></div>
+      </div>
+
+      <div class="card" id="prov-form-card">
+        <div class="card-title"><span id="prov-form-title">Додати провайдера</span> <span class="hint" id="prov-form-hint">обери пресет або заповни поля вручну</span></div>
+
+        <div class="preset-bar">
+          <input id="preset-search" class="search-input" placeholder="🔍 Пошук пресету: openrouter, groq, ollama, deepseek…">
+          <div class="tabs" id="preset-groups"></div>
+        </div>
+        <div id="preset-grid" class="preset-grid"></div>
+        <div id="preset-hint" class="preset-hint" style="display:none"></div>
+
+        <div class="grid two">
+          <label>Назва (ідентифікатор) <span class="help-tip" data-tip="Латиниця без пробілів. Під цим ім'ям провайдер живе в config.yaml рушія.">?</span><input id="prov-name" placeholder="openrouter"></label>
+          <label>Base URL <span class="help-tip" data-tip="Адреса без /chat/completions. Рушій сам додасть шлях.">?</span><input id="prov-url" placeholder="https://api.example.com/v1"></label>
+        </div>
+        <div class="grid two">
+          <label>API ключ(і) <span class="hint">по одному на рядок — рушій ротує між ними</span><textarea id="prov-key" rows="2" placeholder="sk-…"></textarea></label>
+          <label>Prefix <span class="hint">не обов'язково: моделі стануть prefix/alias</span><input id="prov-prefix" placeholder="напр. or"></label>
+        </div>
+        <label>Моделі <span class="hint">по одній на рядок; <code>name=alias</code> щоб клієнт бачив інше ім'я</span>
+          <textarea id="prov-models" rows="5" placeholder="gpt-4o&#10;deepseek/deepseek-chat=deepseek"></textarea>
+        </label>
+        <div class="row-between">
+          <button id="prov-fetch-models" class="btn btn-sm btn-ghost">⇩ Підтягнути список моделей з провайдера</button>
+          <span id="prov-fetch-msg" class="msg"></span>
+        </div>
+        <label>Додаткові заголовки <span class="hint">не обов'язково, <code>Header: value</code> на рядок</span>
+          <textarea id="prov-headers" rows="2" placeholder="HTTP-Referer: https://cartelgate.local"></textarea>
+        </label>
+        <div class="row-between" style="margin-top:12px">
+          <div class="btn-row">
+            <button id="prov-add" class="btn btn-accent">Додати провайдера</button>
+            <button id="prov-cancel" class="btn btn-ghost" style="display:none">Скасувати</button>
+          </div>
+          <span id="prov-msg" class="msg"></span>
+        </div>
       </div>
 
       <div class="card">
-        <div class="card-title">Рідні API ключі <span class="hint">рушій сам розпізнає формат</span></div>
+        <div class="card-title">Рідні API ключі <span class="hint">рушій сам знає формат цих провайдерів</span></div>
         <div class="tabs" id="native-tabs">
           <button data-k="claude-api-key" class="active">Claude</button>
           <button data-k="gemini-api-key">Gemini</button>
@@ -141,6 +169,11 @@
         </div>
         <button id="native-add" class="btn btn-accent">Додати ключ</button>
         <span id="native-msg" class="msg"></span>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Акаунти-провайдери <span class="hint">OAuth-акаунти, перенесені зі сторінки «Акаунти»</span></div>
+        <div id="vg-prov-list" class="prov-cards"></div>
       </div>
     </section>
 
@@ -321,7 +354,7 @@
         <div class="grid two">
           <label>Host <input id="set-host"></label>
           <label>Порт <input id="set-port" type="number"></label>
-          <label>VisionGate API ключ <input id="set-apikey"></label>
+          <label>Ключ шлюзу (API key) <input id="set-apikey"></label>
           <label class="check"><input id="set-require" type="checkbox"> Вимагати API ключ від клієнтів</label>
         </div>
         <p class="muted">Зміна порту/хоста набуде чинності після перезапуску програми. Ключі та провайдери оновлюються «на льоту».</p>
@@ -373,7 +406,7 @@
       <div class="card" style="border-left: 4px solid var(--accent);">
         <div class="card-title">♾️ Як абузити і отримати БЕЗКІНЕЧНУ квоту (Безліміт 24/7)</div>
         <p class="guide-text">
-          Головна перевага VisionGate полягає в тому, що він перетворює обмежені безкоштовні квоти провайдерів на <b>безперервний безлімітний потік для твого Claude Code / Cursor / Cline</b>.
+          Головна перевага CartelGate полягає в тому, що він перетворює обмежені безкоштовні квоти провайдерів на <b>безперервний безлімітний потік для твого Claude Code / Cursor / Cline</b>.
         </p>
         <div class="steps-box">
           <div class="step-item">
@@ -398,14 +431,14 @@
             <div class="step-num">⚡</div>
             <div class="step-content">
               <b>Секрет успіху: режим «Викачувати по черзі (Fill-First / Сушити всі акки)»:</b>
-              У вкладці <b>«Моделі»</b> увімкни <i>Fill-First</i>. Шлюз буде повністю застосовувати перший акаунт. Щойно Google повертає статус <code>HTTP 429 (Resource Exhausted)</code>, VisionGate миттєво і прозоро для Claude Code перемикає наступний запит на другий акаунт. Твій кодинг ніколи не переривається помилками!
+              У вкладці <b>«Моделі»</b> увімкни <i>Fill-First</i>. Шлюз буде повністю застосовувати перший акаунт. Щойно Google повертає статус <code>HTTP 429 (Resource Exhausted)</code>, CartelGate миттєво і прозоро для Claude Code перемикає наступний запит на другий акаунт. Твій кодинг ніколи не переривається помилками!
             </div>
           </div>
           <div class="step-item">
             <div class="step-num">🛡️</div>
             <div class="step-content">
               <b>Чисті приватні вікна для додавання акаунтів:</b>
-              Кожен раз, коли ти натискаєш <i>«Gemini-Antigravity — увійти»</i> або іншу кнопку входу, VisionGate відкриває окреме <b>приватне/інкогніто вікно</b> браузера без старих куків. Ти можеш авторизувати 10 різних Google-акаунтів один за одним без змішування sessions! Після успішного входу вікно автоматично закривається.
+              Кожен раз, коли ти натискаєш <i>«Gemini-Antigravity — увійти»</i> або іншу кнопку входу, CartelGate запускає Edge/Chrome з <b>окремим тимчасовим профілем</b> в інкогніто — без куків твого основного браузера. Тому можна авторизувати 10 різних Google-акаунтів один за одним без змішування сесій, і після успішного входу вікно закривається автоматично (профіль стирається). Якщо Edge/Chrome не знайдено, відкривається стандартний браузер — тоді вікно треба закрити вручну.
             </div>
           </div>
         </div>
@@ -471,12 +504,12 @@
       </div>
 
       <div class="card">
-        <div class="card-title">🌟 Що таке VisionGate?</div>
+        <div class="card-title">🌟 Що таке CartelGate?</div>
         <p class="guide-text">
-          <b>VisionGate</b> — це локальний шлюз-проксі (AI Gateway), який об'єднує твої облікові записи різних провайдерів (Google Antigravity, OpenAI Codex, Kimi, Claude, xAI, Meta) в єдину високопродуктивну точку доступу.
+          <b>CartelGate</b> — це локальний шлюз-проксі (AI Gateway) від YouTube Cartel, який збирає твої акаунти й ключі різних провайдерів (Google Antigravity, OpenAI Codex, Kimi, Claude, xAI, Meta + 70 OpenAI-сумісних API) в один «картель» — єдину точку доступу з ротацією та підміною моделей.
         </p>
         <p class="guide-text">
-          Шлюз повністю емулює офіційні API <b>Anthropic Messages</b> (для Claude Code, Cursor, Claude Desktop) та <b>OpenAI Chat Completions</b> (для Cline, Roo Code, Continue, LangChain). Твої інструменти розробки працюють так, ніби вони підключені безпосередньо до офіційних API, а VisionGate прозоро розподіляє навантаження, підмінює моделі, знімає фейкові системні промпти та балансує квоти.
+          Шлюз повністю емулює офіційні API <b>Anthropic Messages</b> (для Claude Code, Cursor, Claude Desktop) та <b>OpenAI Chat Completions</b> (для Cline, Roo Code, Continue, LangChain). Твої інструменти розробки працюють так, ніби вони підключені безпосередньо до офіційних API, а CartelGate прозоро розподіляє навантаження, підмінює моделі, знімає фейкові системні промпти та балансує квоти.
         </p>
       </div>
 
@@ -542,20 +575,20 @@ export ANTHROPIC_MODEL="gemini-3.8-flash-high"</pre>
           <div class="step-item">
             <div class="step-num">5</div>
             <div class="step-content">
-              <b>Працюй у Claude Code:</b> Запусти команду <code>claude</code> у терміналі. Тепер Claude Code працює через VisionGate, використовуючи потужність твоїх підключених моделей з автоматичною ротацією та захистом від лімітів!
+              <b>Працюй у Claude Code:</b> Запусти команду <code>claude</code> у терміналі. Тепер Claude Code працює через CartelGate, використовуючи потужність твоїх підключених моделей з автоматичною ротацією та захистом від лімітів!
             </div>
           </div>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-title">📖 Огляд розділів VisionGate</div>
+        <div class="card-title">📖 Огляд розділів CartelGate</div>
         <div class="grid2">
           <div>
             <h4 style="margin:0 0 4px;color:var(--accent-2)">◉ Сервер</h4>
             <p class="small muted" style="margin-bottom:12px">Головний пульт: статус шлюзу, адреси ендпоінтів для клієнтів, генерація API-ключів, налаштування мережевого порту та готовий сніпет підключення для терміналу.</p>
             <h4 style="margin:0 0 4px;color:var(--accent-2)">≡ Провайдери</h4>
-            <p class="small muted" style="margin-bottom:12px">Підключення зовнішніх OpenAI-сумісних API зі своїми ключами та URL (OpenRouter, DeepSeek, локальний Ollama тощо) та прямих API-ключів провайдерів.</p>
+            <p class="small muted" style="margin-bottom:12px">Понад 70 пресетів OpenAI-сумісних API (OpenRouter, Groq, DeepSeek, Ollama…) зі своїми ключами, редагування після додавання, підтягування списку моделей, рідні ключі Claude/Gemini/Codex.</p>
             <h4 style="margin:0 0 4px;color:var(--accent-2)">▤ Моделі</h4>
             <p class="small muted" style="margin-bottom:12px">Керування логікою підміни: вибір стратегії ротації акаунтів (Round-Robin або Fill-First), мапінг рівнів Haiku/Sonnet/Opus та індивідуальна підміна будь-якої офіційної моделі Claude.</p>
           </div>
@@ -574,6 +607,7 @@ export ANTHROPIC_MODEL="gemini-3.8-flash-high"</pre>
 </div>
 
 <div id="toast" class="toast hidden"></div>
+<script src="presets.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

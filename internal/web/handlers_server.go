@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"visiongate/internal/config"
+	"cartelgate/internal/config"
 )
 
 // apiServerStart: POST /api/server/start
@@ -71,16 +71,16 @@ func (a *App) waitForEngine(timeout time.Duration) bool {
 }
 
 // apiGenerateKey: POST /api/generate-key — replace the local gateway key with
-// a fresh random "vg-…" one and persist it. The engine's client key list is
+// a fresh random "cg-…" one and persist it. The engine's client key list is
 // updated live through the management API so the new key works immediately.
 func (a *App) apiGenerateKey(w http.ResponseWriter, r *http.Request) {
 	// Work on a copy: the live config is read by the request middleware on
 	// every call, so it must never be mutated in place.
 	cfg := a.snapshotConfig().Clone()
 	old := cfg.APIKey
-	cfg.APIKey = "vg-" + randomHex(24)
+	cfg.APIKey = config.NewKey()
 	if cfg.RequireKey {
-		// The VisionGate key is the first client key; the previous one is
+		// The gateway key is the first client key; the previous one is
 		// retired so old copies stop working.
 		keys := []string{cfg.APIKey}
 		for _, k := range cfg.Cliproxy.APIKeys {
@@ -116,7 +116,7 @@ func mustJSON(v any) []byte {
 }
 
 // apiAccountToProvider: POST /api/account-to-provider {"name": "<auth file>"}.
-// Creates/updates a VisionGate provider entry carrying the account's real
+// Creates/updates a CartelGate provider entry carrying the account's real
 // model list (fetched from the engine), so the Models page can offer those
 // models in the tier dropdowns. The engine itself already routes by model
 // name — this entry is the user-visible handle for the account.

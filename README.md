@@ -1,71 +1,90 @@
-# VisionGateGo
+# CartelGate
 
-One process. One port. One window.
+**Локальний AI-шлюз від YouTube Cartel.** Один процес, один порт, одне вікно.
 
-The original [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) source code
-is compiled directly into this binary — the engine IS the server. VisionGate's dark
-UI is mounted on the same Gin engine, and on Windows the exe opens a native desktop
-window (WebView2) pointed at it. Closing the window quits the app.
+Збирає твої акаунти й ключі (Google Antigravity, OpenAI Codex, Kimi, Claude, xAI,
+Meta + 70 OpenAI-сумісних API: OpenRouter, Groq, DeepSeek, Ollama…) в один «картель» —
+єдину точку доступу з ротацією акаунтів, підміною моделей і чорним списком. Claude Code,
+Cursor, Cline і будь-який OpenAI/Anthropic-клієнт підключаються до `http://127.0.0.1:8317`.
+
+The original [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) source code is
+compiled directly into this binary — the engine IS the server. The CartelGate UI is
+mounted on the same Gin engine, and on Windows the exe opens a native desktop window
+(WebView2) pointed at it. Closing the window quits the app.
 
 ## What's inside
 
 | Path | What it is |
 |---|---|
 | `third_party/CLIProxyAPI/` | The full CLIProxyAPI source (unmodified, MIT) |
-| `internal/cliproxy/embedded.go` | SDK embedding: `NewBuilder()…Build()` + `Run(ctx)` |
+| `internal/cliproxy/embedded.go` | SDK embedding: `NewBuilder()…Build()` + `Run(ctx)`, `config.yaml` sync |
 | `internal/desktop/` | Native window (WebView2 on Windows; browser fallback elsewhere) |
-| `internal/web/` | VisionGate dark UI (embedded assets) + control API |
-| `main.go` | Wiring: config → window or console + embedded service |
+| `internal/web/` | CartelGate UI (embedded assets) + control API |
+| `internal/web/ui/presets.js` | 70+ provider presets for the Providers page |
+| `main.go` | Wiring: config → window or console + embedded service, gateway middleware |
 
 ## Run
 
 ```
-VisionGateGo.exe
+CartelGate.exe
 ```
 
-- The desktop window opens by itself, showing the UI at `/ui/`. Root (`/`) now
-  redirects to the UI (302) instead of the upstream JSON blob.
-- Швидкий старт: 1) додай ключі/провайдерів на «Провайдери» або увійди через OAuth на
-  «Акаунти», 2) скопіюй адресу й ключ, 3) встав у Claude Code — усе на головній.
-- If the configured port is busy (e.g. the user's other tools), the app moves to the
-  next free port, saves it, and shows a banner in the UI explaining the move.
-- `--headless` runs server-only (no window); on non-Windows the default console mode
-  opens the default browser automatically.
+- The desktop window opens by itself, showing the UI at `/ui/`. Root (`/`) redirects to it.
+- Швидкий старт: 1) увійди через OAuth на «Акаунти» або додай провайдера з пресету на
+  «Провайдери», 2) скопіюй адресу й ключ зі сторінки «Сервер», 3) встав у Claude Code.
+- If the configured port is busy, the app moves to the next free port, saves it, and
+  shows a banner in the UI explaining the move.
+- `--headless` runs server-only (no window); `--port N` overrides the port for this run.
 - Fatal errors open a message box in GUI mode (no console in a windowsgui build).
+
+## Providers
+
+«Провайдери» → обери пресет (OpenRouter, Groq, Cerebras, DeepSeek, Mistral, xAI, Gemini,
+GitHub Models, Hugging Face, Ollama, LM Studio, Azure, Bedrock, Qwen, GLM, Kimi…), встав
+ключ, за бажанням натисни «Підтягнути список моделей» (запитує `<base-url>/models`) і
+додай. Кожного провайдера потім можна **редагувати** (назва, URL, ключі, моделі, prefix,
+заголовки), **вимкнути/увімкнути** і видалити. Провайдери живуть у `config.yaml` рушія
+і підхоплюються без перезапуску; їхні моделі одразу з'являються в дропдаунах «Моделі».
 
 ## Config
 
-`VISIONGATE_HOME` env var moves the whole data dir (config.json, data/cliproxy/config.yaml,
+`CARTELGATE_HOME` env var moves the whole data dir (config.json, data/cliproxy/config.yaml,
 auths/, logs/, WebView2 profile) — run a second copy beside the first with an isolated home.
+On first start the previous product's directory (`%AppData%\VisionGateGo`) is copied over
+automatically (auths and settings survive; logs and the WebView2 cache are skipped).
 
-- `config.json` — VisionGate settings (port, api key, providers echo)
-- `data/cliproxy/config.yaml` — the engine config (generated, management-editable)
-- `data/cliproxy/logs/app.log` — app + engine log (GUI builds have no console)
+- `config.json` — gateway settings (api key, routing/tier mapping, blacklist, engine host/port)
+- `data/cliproxy/config.yaml` — the engine config (managed keys rewritten, management edits kept)
+- `data/cliproxy/logs/app.log` — app + engine log (GUI builds have no console), rotates at 5 MB
+- `data/oauth-browser/` — throwaway browser profile used for OAuth logins (wiped each time)
 
 ## Building
 
 ```
-set GOCACHE=C:\Users\<you>\AppData\Local\go-portable\gocache
-go build -trimpath -ldflags "-s -w -H=windowsgui" -o VisionGateGo.exe .
+go build -trimpath -ldflags "-s -w -H=windowsgui" -o CartelGate.exe .
 ```
 
-The icon lives in `build/icon.ico` and is embedded via `rsrc_windows_amd64.syso`
-(regenerate: `rsrc.exe -ico build/icon.ico -o rsrc_windows_amd64.syso`).
+The icon lives in `build/icon.ico` (generated by `build/makeicon.go` → `build/makeico.js`)
+and is embedded via `rsrc_windows_amd64.syso` (regenerate:
+`rsrc -ico build/icon.ico -o rsrc_windows_amd64.syso`).
 
 ## Cross-compile
 
 ```bash
-GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o vgate-mac-arm64 .
-GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -o vgate-mac-amd64 .
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o vgate-linux-amd64 .
-GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o vgate-linux-arm64 .
+GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o cg-mac-arm64 .
+GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -o cg-mac-amd64 .
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o cg-linux-amd64 .
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o cg-linux-arm64 .
 ```
 
 ## Notes
 
 - The engine's config watcher hot-reloads api-keys, providers, auth files — no restart
-  needed. Host/port changes need an app restart (Settings page says so).
-- Upstream `/management.html` still exists (upstream surface) but the UI no longer
-  links to it — it demands the auto-generated management secret, which confused users.
+  needed. Host/port changes apply after «Перезапустити» (a real in-process restart).
+- The control API (`/api/*`) accepts same-origin browser requests and local processes
+  only; cross-origin pages get 403.
+- OAuth logins open Edge/Chrome with a dedicated `--user-data-dir` in private mode, so the
+  window is a separate process: no cookies from your main browser and it closes itself
+  when the login completes. If neither browser is found, the default browser opens.
 - `internal/desktop` uses github.com/jchv/go-webview2 — pure Go WebView2 bindings
   (embedded loader DLL, no cgo), so cross-compilation still works.

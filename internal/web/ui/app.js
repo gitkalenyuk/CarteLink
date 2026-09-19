@@ -1,5 +1,5 @@
 'use strict';
-// VisionGateGo UI — talks to /api/* on the same origin as the engine.
+// CartelGate UI — talks to /api/* on the same origin as the engine.
 
 const $ = (id) => document.getElementById(id);
 
@@ -82,7 +82,7 @@ function msg(el, text, ok) {
     const moved = q.get('moved');
     if (moved && $('port-banner')) {
       $('port-banner').textContent =
-        'Порт ' + moved + ' був зайнятий іншою програмою, тому VisionGate запустився на порту ' +
+        'Порт ' + moved + ' був зайнятий іншою програмою, тому CartelGate запустився на порту ' +
         (q.get('port') || '(див. Endpoints нижче)') + '. Все працює — просто адреса інша.';
       $('port-banner').style.display = '';
     }
@@ -553,7 +553,7 @@ async function collectModelOptions() {
     }
   }
 
-  // 2. Custom OpenAI providers from VisionGate configuration
+  // 2. Account providers from the CartelGate config
   try {
     const cfg = await api('/config');
     for (const p of (cfg.providers || [])) {
@@ -575,6 +575,27 @@ async function collectModelOptions() {
       }
     }
   } catch (e) { /* ignore */ }
+
+  // 3. OpenAI-compatible providers living in the engine: clients call them
+  // by alias (with the optional prefix), so offer exactly those names.
+  try {
+    const compat = await fetchCompatList();
+    for (const p of compat) {
+      if (p.disabled) continue;
+      const pOpts = [];
+      for (const m of (p.models || [])) {
+        const alias = m.alias || m.name;
+        if (!alias) continue;
+        // The engine serves both the bare alias and prefix/alias.
+        const names = p.prefix ? [alias, p.prefix + '/' + alias] : [alias];
+        for (const n of names) {
+          pOpts.push({ value: n, text: n });
+          allOpts.add(n);
+        }
+      }
+      if (pOpts.length) groups.push({ label: '🔌 ' + (p.name || 'provider'), options: pOpts });
+    }
+  } catch (e) { /* engine offline */ }
 
   MODEL_GROUPS = groups;
   MODEL_OPTS = Array.from(allOpts);
@@ -769,13 +790,13 @@ const nativeLabels = {
 };
 
 async function refreshProviders() {
-  await renderVgProviders();
   await renderProvList();
   await renderNativeList();
+  await renderVgProviders();
 }
 
-// VisionGate-side provider entries (accounts transferred from the Акаунти
-// page + any manual entries) — shown as cards with model counts.
+// Account-provider entries (OAuth accounts transferred from the Акаунти
+// page) — shown as cards with model counts.
 async function renderVgProviders() {
   const el = $('vg-prov-list');
   let items = [];
@@ -784,7 +805,7 @@ async function renderVgProviders() {
     items = cfg.providers || [];
   } catch (e) { /* ignore */ }
   if (!items.length) {
-    el.innerHTML = '<div class="empty">Ще немає акаунтів-провайдерів. Перенеси акаунт зі сторінки «Акаунти» — натисни «→ Провайдер» на ньому.</div>';
+    el.innerHTML = '<div class="empty">Ще немає акаунтів-провайдерів. Увійди на сторінці «Акаунти» — активні акаунти з’являться тут автоматично.</div>';
     return;
   }
   el.innerHTML = items.map((p) => {
@@ -792,16 +813,17 @@ async function renderVgProviders() {
     const models = (p.models || []).slice(0, 4).join(', ');
     const more = (p.models || []).length > 4 ? ' +ще ' + (p.models.length - 4) : '';
     return '<div class="prov-card">' +
+      '<div class="prov-avatar">' + esc((p.label || p.id || '?').trim().charAt(0).toUpperCase()) + '</div>' +
       '<div class="prov-info">' +
       '<div class="prov-name">' + esc(p.label || p.id) +
       (isAccount ? ' <span class="badge account">АКАУНТ</span>' : ' <span class="badge openai">OPENAI</span>') +
       (p.enabled === false ? ' <span class="chip">вимк.</span>' : '') + '</div>' +
-      '<div class="prov-url mono">' + esc(isAccount ? 'рушій CLIProxyAPI (вбудований)' : (p.baseUrl || '')) + '</div>' +
+      '<div class="prov-url mono">' + esc(isAccount ? 'вбудований рушій (OAuth)' : (p.baseUrl || '')) + '</div>' +
       '<div class="prov-meta"><span><b>' + (p.models || []).length + '</b> моделей</span>' +
       '<span class="mono">' + esc(models) + esc(more) + '</span></div>' +
       '</div>' +
       '<div class="prov-actions">' +
-      '<button class="btn btn-mini" data-del="' + esc(p.id) + '">Видалити</button>' +
+      '<button class="btn btn-mini btn-danger" data-del="' + esc(p.id) + '">Видалити</button>' +
       '</div></div>';
   }).join('');
   el.querySelectorAll('[data-del]').forEach((b) => {
@@ -821,50 +843,187 @@ async function renderVgProviders() {
   });
 }
 
+// ---- OpenAI-compatible providers (engine-side, Management API) ----
+// The engine returns {"openai-compatibility": [...]} and PUT *replaces* the
+// whole list, so every mutation goes through fetchCompatList() first.
+let COMPAT_LIST = [];
+let PROV_EDITING = null; // name of the provider being edited, or null
+
+async function fetchCompatList() {
+  const res = await mgmt('GET', 'openai-compatibility');
+  let arr = [];
+  if (Array.isArray(res)) arr = res;
+  else if (res && Array.isArray(res['openai-compatibility'])) arr = res['openai-compatibility'];
+  else if (res && Array.isArray(res.items)) arr = res.items;
+  COMPAT_LIST = arr;
+  return arr;
+}
+
+// Strip the read-only auth-index fields the GET adds so the PUT body is a
+// clean []config.OpenAICompatibility.
+function compatForWrite(p) {
+  const out = {};
+  for (const k of Object.keys(p)) {
+    if (k === 'auth-index') continue;
+    out[k] = p[k];
+  }
+  if (Array.isArray(out['api-key-entries'])) {
+    out['api-key-entries'] = out['api-key-entries'].map((e) => {
+      const c = {};
+      for (const k of Object.keys(e)) { if (k !== 'auth-index') c[k] = e[k]; }
+      return c;
+    });
+  }
+  return out;
+}
+
+function maskSecret(k) {
+  k = String(k || '');
+  return k.length > 10 ? k.slice(0, 5) + '…' + k.slice(-4) : (k ? '•••' : '');
+}
+
 async function renderProvList() {
+  const el = $('prov-list');
   let items = [];
   try {
-    const list = await mgmt('GET', 'openai-compatibility');
-    items = Array.isArray(list) ? list : (list && list.items) || [];
-  } catch (e) { /* engine not running or none */ }
-  const el = $('prov-list');
+    items = await fetchCompatList();
+  } catch (e) {
+    el.innerHTML = '<div class="empty">Рушій недоступний: ' + esc(e.message) + '</div>';
+    return;
+  }
   if (!items.length) {
-    el.innerHTML = '<div class="empty">Немає OpenAI-сумісних провайдерів у рушії.</div>';
+    el.innerHTML = '<div class="empty">Немає OpenAI-сумісних провайдерів. Обери пресет нижче — це 30 секунд.</div>';
     return;
   }
   el.innerHTML = items.map((p) => {
-    const models = (p.models || []).map((m) => m.alias || m.name).join(', ');
-    return '<div class="prov-card">' +
+    const models = (p.models || []).map((m) => m.alias || m.name);
+    const shown = models.slice(0, 5).join(', ') + (models.length > 5 ? ' +ще ' + (models.length - 5) : '');
+    const keys = (p['api-key-entries'] || []).length;
+    const off = !!p.disabled;
+    const preset = presetByUrl(p['base-url']);
+    return '<div class="prov-card' + (off ? ' off' : '') + '">' +
+      '<div class="prov-avatar">' + esc((p.name || '?').trim().charAt(0).toUpperCase()) + '</div>' +
       '<div class="prov-info">' +
-      '<div class="prov-name">' + esc(p.name) + ' <span class="badge openai">OPENAI</span></div>' +
+      '<div class="prov-name">' + esc(p.name) +
+      (preset ? ' <span class="badge preset">' + esc(preset.label) + '</span>' : ' <span class="badge openai">OPENAI</span>') +
+      (p.prefix ? ' <span class="chip">prefix: ' + esc(p.prefix) + '</span>' : '') +
+      (off ? ' <span class="chip err">вимкнено</span>' : ' <span class="chip ok">активний</span>') + '</div>' +
       '<div class="prov-url mono">' + esc(p['base-url'] || '') + '</div>' +
-      '<div class="prov-meta"><span><b>' + (p.models || []).length + '</b> моделей</span>' +
-      '<span class="mono">' + esc(models) + '</span></div>' +
+      '<div class="prov-meta"><span><b>' + models.length + '</b> моделей</span><span><b>' + keys + '</b> ключ(ів)</span>' +
+      '<span class="mono">' + esc(shown) + '</span></div>' +
       '</div>' +
-      '<div class="prov-actions"><button class="btn btn-mini" data-name="' + esc(p.name) + '">Видалити</button></div>' +
-      '</div>';
+      '<div class="prov-actions">' +
+      '<button class="btn btn-mini" data-edit="' + esc(p.name) + '">✎ Редагувати</button>' +
+      '<button class="btn btn-mini ' + (off ? 'btn-accent' : 'btn-warn') + '" data-toggle="' + esc(p.name) + '" data-off="' + (off ? '1' : '0') + '">' + (off ? '▶ Увімкнути' : '⏸ Вимкнути') + '</button>' +
+      '<button class="btn btn-mini btn-danger" data-name="' + esc(p.name) + '">🗑</button>' +
+      '</div></div>';
   }).join('');
   el.querySelectorAll('[data-name]').forEach((b) => {
     b.addEventListener('click', async () => {
+      if (!window.confirm('Видалити провайдера ' + b.dataset.name + '?')) return;
       try {
         await mgmt('DELETE', 'openai-compatibility?name=' + encodeURIComponent(b.dataset.name));
         toast('Провайдера видалено');
+        if (PROV_EDITING === b.dataset.name) resetProvForm();
+        renderProvList();
+        collectModelOptions();
+      } catch (e) { toast('Помилка: ' + e.message, true); }
+    });
+  });
+  el.querySelectorAll('[data-toggle]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      const off = b.dataset.off === '1';
+      try {
+        await mgmt('PATCH', 'openai-compatibility', { name: b.dataset.toggle, value: { disabled: !off } });
+        toast(off ? 'Провайдера увімкнено ✓' : 'Провайдера вимкнено');
         renderProvList();
       } catch (e) { toast('Помилка: ' + e.message, true); }
     });
   });
+  el.querySelectorAll('[data-edit]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const p = COMPAT_LIST.find((x) => x.name === b.dataset.edit);
+      if (p) startEditProvider(p);
+    });
+  });
 }
 
-async function addProvider() {
-  const name = $('prov-name').value.trim();
-  const baseUrl = $('prov-url').value.trim();
-  const key = $('prov-key').value.trim();
-  const modelsRaw = $('prov-models').value.trim();
-  if (!name || !baseUrl || !key) {
-    msg($('prov-msg'), 'назва, base URL і ключ обовʼязкові', false);
+function presetByUrl(url) {
+  url = String(url || '').replace(/\/+$/, '').toLowerCase();
+  if (!url) return null;
+  return (window.PROVIDER_PRESETS || []).find((p) => p.id !== 'custom' && p.url.replace(/\/+$/, '').toLowerCase() === url) || null;
+}
+
+// ---- presets ----
+let PRESET_GROUP = 'all';
+
+function renderPresetGroups() {
+  const box = $('preset-groups');
+  if (!box) return;
+  const groups = Object.assign({ all: 'Усі' }, window.PRESET_GROUPS || {});
+  box.innerHTML = Object.keys(groups).map((g) =>
+    '<button data-g="' + esc(g) + '" class="' + (g === PRESET_GROUP ? 'active' : '') + '">' + esc(groups[g]) + '</button>').join('');
+  box.querySelectorAll('button').forEach((b) => {
+    b.addEventListener('click', () => { PRESET_GROUP = b.dataset.g; renderPresetGroups(); renderPresetGrid(); });
+  });
+}
+
+function renderPresetGrid() {
+  const grid = $('preset-grid');
+  if (!grid) return;
+  const q = ($('preset-search').value || '').toLowerCase().trim();
+  const list = (window.PROVIDER_PRESETS || []).filter((p) =>
+    (PRESET_GROUP === 'all' || p.group === PRESET_GROUP) &&
+    (!q || p.label.toLowerCase().includes(q) || p.id.includes(q) || p.url.toLowerCase().includes(q) || (p.models || []).some((m) => m.toLowerCase().includes(q))));
+  if (!list.length) {
+    grid.innerHTML = '<span class="muted small" style="padding:6px">Нічого не знайдено — заповни поля вручну.</span>';
     return;
   }
-  const models = modelsRaw
+  const existing = new Set(COMPAT_LIST.map((p) => String(p['base-url'] || '').replace(/\/+$/, '').toLowerCase()));
+  grid.innerHTML = list.map((p) => {
+    const have = existing.has(p.url.replace(/\/+$/, '').toLowerCase());
+    return '<button class="preset-card' + (have ? ' have' : '') + '" data-preset="' + esc(p.id) + '" title="' + esc(p.url) + '">' +
+      '<span class="preset-avatar g-' + esc(p.group) + '">' + esc(p.label.charAt(0).toUpperCase()) + '</span>' +
+      '<span class="preset-body"><span class="preset-label">' + esc(p.label) + '</span>' +
+      '<span class="preset-url">' + esc(p.url.replace(/^https?:\/\//, '')) + '</span></span>' +
+      (have ? '<span class="preset-have">✓</span>' : '') +
+      '</button>';
+  }).join('');
+  grid.querySelectorAll('[data-preset]').forEach((b) => {
+    b.addEventListener('click', () => applyPreset(b.dataset.preset));
+  });
+}
+
+function applyPreset(id) {
+  const p = (window.PROVIDER_PRESETS || []).find((x) => x.id === id);
+  if (!p) return;
+  if (PROV_EDITING) resetProvForm();
+  // A unique name if the preset was already added once.
+  let name = p.id === 'custom' ? '' : p.id;
+  if (name && COMPAT_LIST.some((x) => x.name === name)) {
+    let n = 2;
+    while (COMPAT_LIST.some((x) => x.name === name + '-' + n)) n++;
+    name = name + '-' + n;
+  }
+  $('prov-name').value = name;
+  $('prov-url').value = p.url;
+  $('prov-models').value = (p.models || []).join(String.fromCharCode(10));
+  $('prov-prefix').value = '';
+  $('prov-headers').value = '';
+  $('prov-key').value = '';
+  const hint = $('preset-hint');
+  let html = '<b>' + esc(p.label) + '</b>';
+  if (p.hint) html += ' — ' + esc(p.hint);
+  if (p.keyUrl) html += ' <a href="' + esc(p.keyUrl) + '" target="_blank" rel="noopener">Отримати ключ ↗</a>';
+  if (/<[A-Z_]+>/.test(p.url)) html += '<br><span class="warn">⚠ Заміни плейсхолдер у Base URL на своє значення.</span>';
+  hint.innerHTML = html;
+  hint.style.display = '';
+  $('prov-key').focus();
+  $('prov-key').scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+function parseModelsText(raw) {
+  return String(raw || '')
     .split(String.fromCharCode(10))
     .map((l) => l.trim())
     .filter(Boolean)
@@ -873,25 +1032,174 @@ async function addProvider() {
       if (i > 0) return { name: l.slice(0, i).trim(), alias: l.slice(i + 1).trim() };
       return { name: l, alias: l };
     });
-  const payload = [{
+}
+
+function parseHeadersText(raw) {
+  const out = {};
+  String(raw || '').split(String.fromCharCode(10)).forEach((l) => {
+    const i = l.indexOf(':');
+    if (i > 0) {
+      const k = l.slice(0, i).trim();
+      const v = l.slice(i + 1).trim();
+      if (k) out[k] = v;
+    }
+  });
+  return out;
+}
+
+function parseKeysText(raw) {
+  return String(raw || '').split(String.fromCharCode(10)).map((l) => l.trim()).filter(Boolean);
+}
+
+function readProvForm() {
+  const name = $('prov-name').value.trim();
+  const baseUrl = $('prov-url').value.trim().replace(/\/+$/, '');
+  const keys = parseKeysText($('prov-key').value);
+  return {
     name: name,
-    'base-url': baseUrl,
-    'api-key-entries': [{ 'api-key': key }],
-    models: models,
-  }];
+    baseUrl: baseUrl,
+    keys: keys,
+    prefix: $('prov-prefix').value.trim(),
+    models: parseModelsText($('prov-models').value),
+    headers: parseHeadersText($('prov-headers').value),
+  };
+}
+
+function validateProvForm(f) {
+  if (!f.name) return 'вкажи назву';
+  if (!/^[A-Za-z0-9._-]+$/.test(f.name)) return 'назва: лише латиниця, цифри, . _ -';
+  if (!/^https?:\/\//.test(f.baseUrl)) return 'Base URL має починатись з http:// або https://';
+  if (/<[A-Z_]+>/.test(f.baseUrl)) return 'заміни плейсхолдер <…> у Base URL';
+  if (!f.keys.length) return 'потрібен хоча б один API ключ (для локальних серверів — будь-який, напр. local)';
+  if (!f.models.length) return 'додай хоча б одну модель або натисни «Підтягнути список моделей»';
+  return '';
+}
+
+function toCompatEntry(f, prev) {
+  const entry = prev ? compatForWrite(prev) : {};
+  entry.name = f.name;
+  entry['base-url'] = f.baseUrl;
+  entry['api-key-entries'] = f.keys.map((k) => {
+    const old = prev && (prev['api-key-entries'] || []).find((e) => e['api-key'] === k);
+    const e = { 'api-key': k };
+    if (old && old['proxy-url']) e['proxy-url'] = old['proxy-url'];
+    if (old && old.weight != null) e.weight = old.weight;
+    return e;
+  });
+  entry.models = f.models;
+  if (f.prefix) entry.prefix = f.prefix; else delete entry.prefix;
+  if (Object.keys(f.headers).length) entry.headers = f.headers; else delete entry.headers;
+  return entry;
+}
+
+async function saveProvider() {
+  const f = readProvForm();
+  const bad = validateProvForm(f);
+  if (bad) { msg($('prov-msg'), bad, false); return; }
+  const btn = $('prov-add');
+  btn.disabled = true;
   try {
-    await mgmt('PUT', 'openai-compatibility', payload);
-    $('prov-name').value = '';
-    $('prov-url').value = '';
-    $('prov-key').value = '';
-    $('prov-models').value = '';
-    msg($('prov-msg'), 'провайдера додано', true);
-    renderProvList();
+    const list = await fetchCompatList();
+    if (PROV_EDITING) {
+      const prev = list.find((x) => x.name === PROV_EDITING);
+      if (!prev) throw new Error('провайдера ' + PROV_EDITING + ' більше немає');
+      if (f.name !== PROV_EDITING && list.some((x) => x.name === f.name)) throw new Error('назва ' + f.name + ' вже зайнята');
+      const value = toCompatEntry(f, prev);
+      await mgmt('PATCH', 'openai-compatibility', { name: PROV_EDITING, value: {
+        name: value.name, 'base-url': value['base-url'], 'api-key-entries': value['api-key-entries'],
+        models: value.models, prefix: f.prefix, headers: f.headers,
+      } });
+      msg($('prov-msg'), 'зміни збережено ✓', true);
+      toast('Провайдера ' + f.name + ' оновлено ✓');
+    } else {
+      if (list.some((x) => x.name === f.name)) throw new Error('назва ' + f.name + ' вже зайнята — обери іншу або відредагуй наявного');
+      const next = list.map(compatForWrite);
+      next.push(toCompatEntry(f, null));
+      await mgmt('PUT', 'openai-compatibility', next);
+      msg($('prov-msg'), 'провайдера додано ✓', true);
+      toast('Провайдера ' + f.name + ' додано ✓ (' + f.models.length + ' моделей)');
+    }
+    resetProvForm();
+    await renderProvList();
+    renderPresetGrid();
+    collectModelOptions();
   } catch (e) {
     msg($('prov-msg'), 'не вдалось: ' + e.message, false);
+  } finally {
+    btn.disabled = false;
   }
 }
-$('prov-add').addEventListener('click', addProvider);
+
+function startEditProvider(p) {
+  PROV_EDITING = p.name;
+  $('prov-form-title').textContent = 'Редагувати провайдера: ' + p.name;
+  $('prov-form-hint').textContent = 'зміни підхопляться рушієм одразу';
+  $('prov-name').value = p.name || '';
+  $('prov-url').value = p['base-url'] || '';
+  $('prov-key').value = (p['api-key-entries'] || []).map((e) => e['api-key'] || '').filter(Boolean).join(String.fromCharCode(10));
+  $('prov-prefix').value = p.prefix || '';
+  $('prov-models').value = (p.models || []).map((m) => (m.alias && m.alias !== m.name) ? m.name + '=' + m.alias : m.name).join(String.fromCharCode(10));
+  $('prov-headers').value = Object.entries(p.headers || {}).map(([k, v]) => k + ': ' + v).join(String.fromCharCode(10));
+  $('prov-add').textContent = 'Зберегти зміни';
+  $('prov-cancel').style.display = '';
+  const preset = presetByUrl(p['base-url']);
+  const hint = $('preset-hint');
+  if (preset && preset.keyUrl) {
+    hint.innerHTML = '<b>' + esc(preset.label) + '</b> <a href="' + esc(preset.keyUrl) + '" target="_blank" rel="noopener">Ключі ↗</a>';
+    hint.style.display = '';
+  } else {
+    hint.style.display = 'none';
+  }
+  $('prov-form-card').scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+
+function resetProvForm() {
+  PROV_EDITING = null;
+  $('prov-form-title').textContent = 'Додати провайдера';
+  $('prov-form-hint').textContent = 'обери пресет або заповни поля вручну';
+  ['prov-name', 'prov-url', 'prov-key', 'prov-prefix', 'prov-models', 'prov-headers'].forEach((id) => { $(id).value = ''; });
+  $('prov-add').textContent = 'Додати провайдера';
+  $('prov-cancel').style.display = 'none';
+  $('preset-hint').style.display = 'none';
+  $('prov-fetch-msg').textContent = '';
+}
+
+async function fetchProviderModels() {
+  const f = readProvForm();
+  const out = $('prov-fetch-msg');
+  if (!/^https?:\/\//.test(f.baseUrl)) { msg(out, 'спочатку вкажи Base URL', false); return; }
+  const btn = $('prov-fetch-models');
+  btn.disabled = true;
+  out.textContent = 'запитую ' + f.baseUrl + '/models …';
+  out.className = 'msg';
+  try {
+    const r = await api('/provider-models', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ baseUrl: f.baseUrl, apiKey: f.keys[0] || '', headers: f.headers }),
+    });
+    const models = r.models || [];
+    if (!models.length) { msg(out, 'провайдер повернув порожній список', false); return; }
+    // Keep aliases the user already typed.
+    const existing = parseModelsText($('prov-models').value);
+    const aliasByName = {};
+    existing.forEach((m) => { if (m.alias && m.alias !== m.name) aliasByName[m.name] = m.alias; });
+    $('prov-models').value = models.map((m) => aliasByName[m] ? m + '=' + aliasByName[m] : m).join(String.fromCharCode(10));
+    msg(out, 'отримано ' + models.length + ' моделей ✓ (можна видалити зайві)', true);
+  } catch (e) {
+    msg(out, 'не вдалось: ' + e.message, false);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+$('prov-add').addEventListener('click', saveProvider);
+$('prov-cancel').addEventListener('click', resetProvForm);
+$('prov-refresh').addEventListener('click', () => { renderProvList().then(renderPresetGrid); });
+$('prov-fetch-models').addEventListener('click', fetchProviderModels);
+$('preset-search').addEventListener('input', renderPresetGrid);
+renderPresetGroups();
+renderPresetGrid();
 
 async function renderNativeList() {
   const el = $('native-list');
@@ -1264,12 +1572,12 @@ $('clip-key-add').addEventListener('click', setClipKeys);
 $('auth-refresh').addEventListener('click', renderAuthFiles);
 
 // ---------- metrics page (live usage-queue + auth-files quotas) ----------
-const USAGE_STORE_KEY = 'vg.usageHistory';
+const USAGE_STORE_KEY = 'cg.usageHistory';
 let usageHistory = loadUsageHistory();
 
 function loadUsageHistory() {
   try {
-    const raw = localStorage.getItem(USAGE_STORE_KEY);
+    const raw = localStorage.getItem(USAGE_STORE_KEY) || localStorage.getItem('vg.usageHistory');
     const arr = raw ? JSON.parse(raw) : [];
     return Array.isArray(arr) ? arr : [];
   } catch (e) { return []; }
