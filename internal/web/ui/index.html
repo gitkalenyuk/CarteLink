@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VisionGate</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-logo">◈</div>
+      <div class="brand-text">
+        <div class="brand-name">VisionGate</div>
+        <span id="tbStatus" class="tb-pill off"><i class="dot"></i><span id="tbStatusText">зупинено</span></span>
+      </div>
+    </div>
+    <nav id="nav">
+      <button data-page="server" class="active"><span class="ic">◉</span> Сервер</button>
+      <button data-page="providers"><span class="ic">≡</span> Провайдери</button>
+      <button data-page="models"><span class="ic">▤</span> Моделі</button>
+      <button data-page="cliproxy"><span class="ic">◆</span> Акаунти</button>
+      <button data-page="metrics"><span class="ic">▦</span> Статистика</button>
+      <button data-page="settings"><span class="ic">⚙</span> Налаштування</button>
+      <button data-page="about"><span class="ic">ℹ</span> Про програму</button>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="ver" id="sidebar-version">v1.0.0</div>
+    </div>
+  </aside>
+
+  <main id="main">
+    <!-- SERVER -->
+    <section id="page-server" class="page active">
+      <div class="view-head">
+        <h1>Сервер</h1>
+        <p class="sub">Локальний шлюз. Вкажи Claude Code або будь-який OpenAI/Anthropic-клієнт на адреси нижче.</p>
+      </div>
+
+      <div class="card notice" id="port-banner" style="display:none"></div>
+
+      <div class="card status-card">
+        <div class="status-main">
+          <div id="bigDot" class="big-dot off"></div>
+          <div>
+            <div id="statusHeadline" class="status-headline">Зупинено</div>
+            <div id="statusSub" class="status-sub">Шлюз не працює.</div>
+          </div>
+        </div>
+        <div class="status-actions">
+          <button class="btn btn-green" id="btnStart">▶ Запустити</button>
+          <button class="btn btn-red" id="btnStop" disabled>■ Стоп</button>
+          <button class="btn btn-ghost" id="btnRestart" disabled>↻ Перезапустити</button>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <div class="card-title">Адреси (Endpoints) <span class="help-tip" data-tip="Локальні точки входу для клієнтських програм. Обери потрібний ендпоінт залежно від того, з чим працюєш (OpenAI або Anthropic).">?</span></div>
+          <div class="field">
+            <label>OpenAI-сумісний <span class="tag">/v1/chat/completions</span> <span class="help-tip" data-tip="Адреса для будь-яких програм, що працюють за стандартом OpenAI (Cursor, Cline, Continue, LangChain тощо).">?</span></label>
+            <div class="copyrow"><input id="epOpenAI" readonly /><button class="btn btn-mini" data-copy="epOpenAI">Копіювати</button></div>
+          </div>
+          <div class="field">
+            <label>Anthropic-сумісний (Base URL) <span class="tag">для Claude Code</span> <span class="help-tip" data-tip="Базова адреса для Claude Code та Anthropic SDK. Claude Code автоматично додає /v1/messages до цього URL.">?</span></label>
+            <div class="copyrow"><input id="epAnthropic" readonly /><button class="btn btn-mini" data-copy="epAnthropic">Копіювати</button></div>
+          </div>
+          <div class="field">
+            <label>Порт <span class="help-tip" data-tip="Локальний мережевий порт шлюзу (за замовчуванням 8337). Зміна набуде чинності після перезапуску.">?</span></label>
+            <div class="copyrow"><input id="portInput" type="number" min="1" max="65535" /><button class="btn btn-mini" id="btnApplyPort">Застосувати</button></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">API ключ <span class="hint">клієнти надсилають його як ключ</span> <span class="help-tip" data-tip="Секретний токен доступу до шлюзу. Дозволяє обмежити доступ сторонніх процесів до локального проксі.">?</span></div>
+          <div class="field">
+            <label>Ключ шлюзу <span class="help-tip" data-tip="Токен доступу, який передається у змінній ANTHROPIC_AUTH_TOKEN або OPENAI_API_KEY.">?</span></label>
+            <div class="copyrow">
+              <input id="apiKey" readonly type="password" />
+              <button class="btn btn-mini" id="btnRevealKey" title="Показати / приховати">👁</button>
+              <button class="btn btn-mini" data-copy="apiKey">Копіювати</button>
+            </div>
+          </div>
+          <div class="row-between">
+            <label class="switch"><input type="checkbox" id="requireKey" /><span class="slider"></span><span class="switch-label">Вимагати ключ <span class="help-tip" data-tip="Якщо увімкнено, шлюз перевіряє валідність ключа. Якщо вимкнено — приймається будь-який або порожній ключ.">?</span></span></label>
+            <button class="btn btn-ghost btn-sm" id="btnGenKey">Згенерувати новий ключ</button>
+          </div>
+          <div class="field">
+            <label>Модель за замовчуванням <span class="hint">коли клієнт надсилає пусте/загальне ім'я</span> <span class="help-tip" data-tip="Модель, яка обирається автоматично, якщо клієнт надсилає порожній запит або ім'я моделі без мапінгу.">?</span></label>
+            <div class="copyrow"><select id="defaultModel"><option value="">— не вказано —</option></select></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Підключити Claude Code <span class="hint">встав у свій термінал</span> <span class="help-tip" data-tip="Готовий набір змінних оточення для терміналу. Просто скопіюй і виконай перед запуском claude.">?</span> <button class="btn btn-mini right" data-copy="snippet">Копіювати</button></div>
+        <pre id="snippet" class="snippet"></pre>
+      </div>
+    </section>
+
+    <!-- PROVIDERS -->
+    <section id="page-providers" class="page">
+      <div class="view-head">
+        <h1>Провайдери</h1>
+        <p class="sub">Список джерел моделей: OAuth-акаунти, перенесені з «Акаунтів», та OpenAI-сумісні апстріми з ключами.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Акаунти-провайдери <span class="hint">перенесені зі сторінки «Акаунти»</span></div>
+        <div id="vg-prov-list" class="prov-cards"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">OpenAI-сумісні провайдери <span class="hint">живуть у рушії CLIProxyAPI</span></div>
+        <div id="prov-list" class="prov-cards"></div>
+        <h3 class="muted-h">Додати провайдера</h3>
+        <div class="grid">
+          <label>Назва <input id="prov-name" placeholder="my-provider"></label>
+          <label>Base URL <input id="prov-url" placeholder="https://api.example.com/v1"></label>
+          <label>API ключ <input id="prov-key" type="password" placeholder="sk-…"></label>
+          <label>Моделі <textarea id="prov-models" rows="3" placeholder="gpt-4o&#10;claude-3-5-sonnet=claude-sonnet"></textarea></label>
+        </div>
+        <button id="prov-add" class="btn btn-accent">Додати провайдера</button>
+        <span id="prov-msg" class="msg"></span>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Рідні API ключі <span class="hint">рушій сам розпізнає формат</span></div>
+        <div class="tabs" id="native-tabs">
+          <button data-k="claude-api-key" class="active">Claude</button>
+          <button data-k="gemini-api-key">Gemini</button>
+          <button data-k="codex-api-key">Codex</button>
+          <button data-k="xai-api-key">xAI</button>
+          <button data-k="meta-api-key">Meta</button>
+        </div>
+        <div id="native-list" class="mono small"></div>
+        <div class="grid two">
+          <label>API ключ <input id="native-key" type="password"></label>
+          <label>Base URL (не обов'язково) <input id="native-url" placeholder="https://api.anthropic.com"></label>
+        </div>
+        <button id="native-add" class="btn btn-accent">Додати ключ</button>
+        <span id="native-msg" class="msg"></span>
+      </div>
+    </section>
+
+    <!-- MODELS -->
+    <section id="page-models" class="page">
+      <div class="view-head">
+        <h1>Моделі</h1>
+        <p class="sub">Підміни будь-яке ім'я моделі, яке надсилає клієнт (усі офіційні Claude-моделі з пікера — нижче), на реальну модель з твоїх акаунтів/провайдерів. Шлюз підмінює прозоро.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Стратегія ротації акаунтів <span class="hint">як рушій розподіляє запити між акаунтами</span> <span class="help-tip" data-tip="Визначає, як шлюз автоматично перемикає запити між твоїми підключеними акаунтами провайдера.">?</span></div>
+        <div class="routing-strategy-box">
+          <label class="radio-label">
+            <input type="radio" name="routingStrategy" value="round-robin" id="strat-round-robin" checked>
+            <div class="radio-content">
+              <span class="radio-title">🔄 По черзі (Round-Robin) <span class="help-tip" data-tip="Рівномірний баланс: кожен наступний запит іде на наступний акаунт провайдера. Навантаження розподіляється однаково.">?</span></span>
+              <span class="radio-desc">Рівномірно розподіляє запити по черзі між усіма активними акаунтами провайдера.</span>
+            </div>
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="routingStrategy" value="fill-first" id="strat-fill-first">
+            <div class="radio-content">
+              <span class="radio-title">⚡ Викачувати по черзі (Fill-First / Сушити всі акки) <span class="help-tip" data-tip="Всі запити йдуть на 1-й акаунт до вичерпання квоти (429). Потім шлюз автоматично перемикається на 2-й, 3-й і т.д.">?</span></span>
+              <span class="radio-desc">Викачує перший акаунт до вичерпання ліміту (429), після чого автоматично перемикається на наступний.</span>
+            </div>
+          </label>
+        </div>
+        <span id="strat-msg" class="msg"></span>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Мапінг рівнів <span class="hint">яка реальна модель відповідає кожному Claude-рівню</span> <span class="help-tip" data-tip="Швидкий мапінг для Claude Code: клієнт надсилає запит на рівень (Haiku, Sonnet або Opus), а шлюз прозоро підставляє призначену модель.">?</span></div>
+        <div class="apply-all-bar">
+          <span>⚡ Призначити одну модель для всіх 3 рівнів:</span>
+          <select id="applyAllTiersSelect"></select>
+          <button id="btnApplyAllTiers" class="btn btn-sm btn-accent">Застосувати до Haiku, Sonnet, Opus</button>
+        </div>
+        <div class="tier-row">
+          <span class="tier-badge haiku">Haiku</span>
+          <span class="tier-desc">найшвидша · дрібні/фонові задачі <span class="help-tip" data-tip="Рівень для швидких пошукових та допоміжних операцій (рекомендується Gemini 3.8 Flash).">?</span></span>
+          <select id="tierHaiku"></select>
+        </div>
+        <div class="tier-row">
+          <span class="tier-badge sonnet">Sonnet</span>
+          <span class="tier-desc">основна · кодинг/чат <span class="help-tip" data-tip="Основний робочий рівень Claude Code для написання коду та аналізу проекту.">?</span></span>
+          <select id="tierSonnet"></select>
+        </div>
+        <div class="tier-row">
+          <span class="tier-badge opus">Opus</span>
+          <span class="tier-desc">найрозумніша · важкі задачі <span class="help-tip" data-tip="Рівень найвищого інтелекту для глибокого архітектурного планування та складних рефакторингів.">?</span></span>
+          <select id="tierOpus"></select>
+        </div>
+        <div class="row-end"><button class="btn btn-accent" id="btnSaveTiers">Зберегти мапінг</button></div>
+        <span id="tiers-msg" class="msg"></span>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Офіційні моделі Claude <span class="hint">усі імена з пікера Claude Code / Claude Desktop</span> <span class="help-tip" data-tip="Точкова підміна для будь-якої конкретної моделі з меню Claude Code (Fable 5.1, Opus 5, Sonnet 5 тощо). Має вищий пріоритет за рівні.">?</span>
+          <button class="btn btn-mini right" id="btnCopyAliasMap">Копіювати YAML мапінгу</button>
+        </div>
+        <p class="hint" style="margin:0 0 12px">Будь-яке з цих імен можна підмінити на реальну модель — клієнт думатиме, що говорить з офіційною. Порожнє = йде як є.</p>
+        <div class="apply-all-bar">
+          <span>⚡ Призначити одну модель для ВСІХ офіційних Claude моделей:</span>
+          <select id="applyAllOfficialSelect"></select>
+          <button id="btnApplyAllOfficial" class="btn btn-sm btn-accent">Застосувати до всіх офіційних</button>
+          <button id="btnResetAllOfficial" class="btn btn-sm btn-ghost">Скинути всі (йде як є)</button>
+        </div>
+        <div id="official-list" class="alias-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Встав у Claude Desktop → список моделей <button class="btn btn-mini right" id="btnCopyAliases">Копіювати всі</button></div>
+        <p class="hint" style="margin:0 0 12px">Ці імена (клікни — скопіюється) клієнт надсилає як модель, а шлюз підмінює на реальну з мапінгу вище.</p>
+        <div id="aliasList" class="alias-list"></div>
+      </div>
+    </section>
+
+    <!-- CLIPROXY / ACCOUNTS -->
+    <section id="page-cliproxy" class="page">
+      <div class="view-head">
+        <h1>Акаунти</h1>
+        <p class="sub">OAuth-акаунти, з яких рушій бере моделі: Claude, Codex, Gemini (Antigravity), Kimi, xAI, Devin, Meta.</p>
+      </div>
+
+      <div class="card status-card">
+        <div class="status-main">
+          <div id="cpBigDot" class="big-dot off"></div>
+          <div>
+            <div id="cpStatusHeadline" class="status-headline">Зупинено</div>
+            <div id="cpStatusSub" class="status-sub">Рушій CLIProxyAPI v<span id="cp-version"></span> не працює.</div>
+          </div>
+        </div>
+        <div class="status-actions">
+          <button class="btn btn-green" id="cpBtnStart">▶ Запустити</button>
+          <button class="btn btn-red" id="cpBtnStop" disabled>■ Стоп</button>
+          <button class="btn btn-ghost" id="cpBtnRestart" disabled>↻ Перезапустити</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Вхід через OAuth <span class="hint">відкриється сторінка входу в браузері</span> <span class="help-tip" data-tip="Натисни на провайдера, щоб увійти у свій обліковий запис у браузері. Токен збережеться локально у зашифрованому вигляді.">?</span>
+          <button class="btn btn-mini right" id="auth-refresh">Оновити</button>
+        </div>
+        <div id="oauth-buttons" class="oauth-row"></div>
+        <div id="oauth-status" class="msg"></div>
+        <div id="auth-files" class="auth-file-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Ключі доступу до проксі (api-keys) <span class="hint">що клієнти надсилають рушієві</span> <span class="help-tip" data-tip="Статичні API-ключі доступу до рушія CLIProxyAPI. Якщо список порожній, рушій приймає будь-який ключ.">?</span></div>
+        <div id="clip-keys" class="mono small"></div>
+        <div class="grid two">
+          <label>Ключ <input id="clip-new-key" placeholder="sk-…"></label>
+        </div>
+        <button id="clip-key-add" class="btn btn-accent">Додати ключ</button>
+        <span id="clip-msg" class="msg"></span>
+      </div>
+    </section>
+
+    <!-- METRICS -->
+    <section id="page-metrics" class="page">
+      <div class="view-head">
+        <h1>Статистика та ліміти акаунтів</h1>
+        <p class="sub">Використання токенів, статус квот та ротація акаунтів у реальному часі.</p>
+      </div>
+
+      <div class="grid4">
+        <div class="card stat-box">
+          <div class="stat-label">Всього токенів</div>
+          <div class="stat-val" id="metric-total-tokens">0</div>
+          <div class="stat-sub" id="metric-total-reqs">0 запитів</div>
+        </div>
+        <div class="card stat-box">
+          <div class="stat-label">Вхідні (Prompt)</div>
+          <div class="stat-val" id="metric-input-tokens">0</div>
+          <div class="stat-sub" id="metric-cached-tokens">0 кешовано</div>
+        </div>
+        <div class="card stat-box">
+          <div class="stat-label">Вихідні (Completion)</div>
+          <div class="stat-val" id="metric-output-tokens">0</div>
+          <div class="stat-sub" id="metric-reasoning-tokens">0 міркування</div>
+        </div>
+        <div class="card stat-box">
+          <div class="stat-label">Успішність</div>
+          <div class="stat-val" id="metric-success-rate">100%</div>
+          <div class="stat-sub" id="metric-success-counts">0 успішних / 0 помилок</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          Статус квот та лімітів акаунтів
+          <button class="btn btn-mini right" id="usage-refresh">Оновити</button>
+        </div>
+        <p class="hint" style="margin:0 0 12px">Статус лімітів (квот), лічильники успіхів/помилок та кнопка негайного скидання обмеження (Reset Quota) для кожного акаунта.</p>
+        <div id="accounts-quota-table">…</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Використання за моделями</div>
+        <div id="models-usage-table">…</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Останні запити (Live Usage Queue)</div>
+        <div id="recent-requests-table">…</div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="page-settings" class="page">
+      <div class="view-head">
+        <h1>Налаштування</h1>
+        <p class="sub">Хост, порт, ключі та сирий YAML для досвідчених.</p>
+      </div>
+      <div class="card">
+        <div class="grid two">
+          <label>Host <input id="set-host"></label>
+          <label>Порт <input id="set-port" type="number"></label>
+          <label>VisionGate API ключ <input id="set-apikey"></label>
+          <label class="check"><input id="set-require" type="checkbox"> Вимагати API ключ від клієнтів</label>
+        </div>
+        <p class="muted">Зміна порту/хоста набуде чинності після перезапуску програми. Ключі та провайдери оновлюються «на льоту».</p>
+        <button id="set-save" class="btn btn-accent">Зберегти</button>
+        <span id="set-msg" class="msg"></span>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🚫 Чорний список моделей (Model Blacklist) <span class="help-tip" data-tip="Будь-яка додана сюди модель повністю блокується: вона не відображатиметься в жодному меню вибору моделей та відфільтровується у списку моделей для клієнтів (Claude Code).">?</span></div>
+        <p class="hint" style="margin:0 0 12px">Завантаж весь список моделей нижче та просто клацни на потрібну модель, щоб додати її в чорний список (або прибрати з нього). Також можна ввести ID моделі вручну.</p>
+
+        <!-- Каталог усіх моделей для швидкого додавання/видалення -->
+        <div class="model-catalog-box">
+          <div class="model-catalog-header">
+            <button id="set-blacklist-load" class="btn btn-sm btn-accent">📥 Завантажити всі доступні моделі</button>
+            <input id="set-blacklist-filter" class="search-input" placeholder="🔍 Швидкий пошук моделі..." style="display:none">
+            <span id="set-blacklist-count" class="muted small" style="margin-left:auto"></span>
+          </div>
+          <div id="set-blacklist-catalog" class="model-chips-container" style="display:none"></div>
+        </div>
+
+        <div class="grid two" style="margin-top:16px">
+          <label>Або введи ID моделі вручну
+            <input id="set-blacklist-input" placeholder="наприклад: gpt-3.5-turbo або gemini-1.5-flash">
+          </label>
+        </div>
+        <button id="set-blacklist-add" class="btn btn-sm btn-accent" style="margin-top:8px">Додати вручну</button>
+        <span id="set-blacklist-msg" class="msg"></span>
+
+        <div class="card-title" style="margin-top:20px;font-size:13px">Активні заблоковані моделі <span class="hint">(клікни на модель, щоб прибрати її з чорного списку)</span>:</div>
+        <div id="set-blacklist-tags" class="blacklist-box"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Додатково: свій config.yaml <span class="hint">для досвідчених</span></div>
+        <textarea id="set-extra" rows="8" class="mono full" placeholder="# raw YAML appended to the generated engine config"></textarea>
+        <button id="set-extra-save" class="btn">Зберегти YAML</button>
+        <span id="set-extra-msg" class="msg"></span>
+      </div>
+    </section>
+
+    <!-- ABOUT -->
+    <section id="page-about" class="page">
+      <div class="view-head">
+        <h1>Про програму (About)</h1>
+        <p class="sub">Повна довідка: архітектура, принцип роботи, ротація акаунтів, мапінг моделей та налаштування.</p>
+      </div>
+
+      <div class="card" style="border-left: 4px solid var(--accent);">
+        <div class="card-title">♾️ Як абузити і отримати БЕЗКІНЕЧНУ квоту (Безліміт 24/7)</div>
+        <p class="guide-text">
+          Головна перевага VisionGate полягає в тому, що він перетворює обмежені безкоштовні квоти провайдерів на <b>безперервний безлімітний потік для твого Claude Code / Cursor / Cline</b>.
+        </p>
+        <div class="steps-box">
+          <div class="step-item">
+            <div class="step-num">💎</div>
+            <div class="step-content">
+              <b>Чому Google Antigravity — це золота жила?</b>
+              Google надає кожному звичайному Google-акаунту безкоштовний доступ до топових моделей <code>gemini-3.8-flash-high</code>, <code>gemini-3.8-pro-high</code> та <code>claude-sonnet-4-6 (Antigravity)</code> без жодної платної підписки! Кожен акаунт має добові ліміти запитів (RPD) та ліміти за хвилину (RPM).
+            </div>
+          </div>
+          <div class="step-item">
+            <div class="step-num">🎯</div>
+            <div class="step-content">
+              <b>Скільки акаунтів потрібно для щоденної роботи?</b>
+              <ul style="margin:6px 0 0 16px;padding:0">
+                <li><b>3 – 5 безкоштовних Google-акаунтів:</b> Цього достатньо для повноцінної щоденної роботи одного активного розробника (8-10 годин безперервного кодингу).</li>
+                <li><b>10+ безкоштовних акаунтів:</b> Практично <b>невичерпний безліміт</b>. Поки один акаунт тимчасово вичерпав хвилинну квоту або добовий ліміт, рушій перемикається на наступний, а попередній встигає повністю скинути кулдаун!</li>
+                <li><b>Pro / Google Workspace акаунти:</b> Мають у рази вищі ліміти токенів і меншу чутливість до RPM, але навіть звичайні безкоштовні акаунти у зв’язці дають 100% результат.</li>
+              </ul>
+            </div>
+          </div>
+          <div class="step-item">
+            <div class="step-num">⚡</div>
+            <div class="step-content">
+              <b>Секрет успіху: режим «Викачувати по черзі (Fill-First / Сушити всі акки)»:</b>
+              У вкладці <b>«Моделі»</b> увімкни <i>Fill-First</i>. Шлюз буде повністю застосовувати перший акаунт. Щойно Google повертає статус <code>HTTP 429 (Resource Exhausted)</code>, VisionGate миттєво і прозоро для Claude Code перемикає наступний запит на другий акаунт. Твій кодинг ніколи не переривається помилками!
+            </div>
+          </div>
+          <div class="step-item">
+            <div class="step-num">🛡️</div>
+            <div class="step-content">
+              <b>Чисті приватні вікна для додавання акаунтів:</b>
+              Кожен раз, коли ти натискаєш <i>«Gemini-Antigravity — увійти»</i> або іншу кнопку входу, VisionGate відкриває окреме <b>приватне/інкогніто вікно</b> браузера без старих куків. Ти можеш авторизувати 10 різних Google-акаунтів один за одним без змішування sessions! Після успішного входу вікно автоматично закривається.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📊 Порівняння квот та вимог провайдерів</div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Провайдер</th>
+              <th>Вимоги</th>
+              <th>Орієнтовна квота</th>
+              <th>Топові моделі</th>
+              <th>Рекомендація</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>Gemini (Antigravity)</b></td>
+              <td><span class="oauth-badge free">Безкоштовно</span> Звичайний Google-акаунт</td>
+              <td>~1000–1500 запитів/день на акаунт</td>
+              <td><code>gemini-3.8-flash-high</code>, <code>claude-sonnet-4-6</code></td>
+              <td><b>Топ-1 для Claude Code!</b> Додай 5-10 акаунтів і забудь про обмеження.</td>
+            </tr>
+            <tr>
+              <td><b>Kimi (Moonshot)</b></td>
+              <td><span class="oauth-badge freemium">Freemium</span> Пошта або телефон</td>
+              <td>Стартовий баланс токенів</td>
+              <td><code>kimi-k2.8-code</code> (міркування)</td>
+              <td>Чудово для складного аналізу коду та рефакторингу.</td>
+            </tr>
+            <tr>
+              <td><b>OpenAI Codex</b></td>
+              <td><span class="oauth-badge sub">Підписка / API</span> ChatGPT Plus / Copilot</td>
+              <td>Залежить від плану ChatGPT Plus / Team</td>
+              <td><code>gpt-5.5</code>, <code>o3-mini</code>, <code>gpt-4o</code></td>
+              <td>Висока швидкість генерації та точність.</td>
+            </tr>
+            <tr>
+              <td><b>Claude (Anthropic)</b></td>
+              <td><span class="oauth-badge sub">Підписка обов’язкова</span> Pro / Team / API</td>
+              <td>Ліміти сесії Anthropic Messages</td>
+              <td><code>claude-opus-4-6</code>, <code>claude-sonnet-4-6</code></td>
+              <td>Прямий доступ до нативних моделей Claude.</td>
+            </tr>
+            <tr>
+              <td><b>Meta AI</b></td>
+              <td><span class="oauth-badge free">Безкоштовно</span> Meta / Facebook акаунт</td>
+              <td>Щоденні веб-квоти Meta AI</td>
+              <td><code>llama-3.3-70b-instruct</code></td>
+              <td>Надійна безкоштовна відкрита модель для загальних завдань.</td>
+            </tr>
+            <tr>
+              <td><b>xAI (Grok)</b></td>
+              <td><span class="oauth-badge sub">Підписка X</span> X Premium / Premium+</td>
+              <td>Квоти підписки X</td>
+              <td><code>grok-3</code>, <code>grok-3-mini</code></td>
+              <td>Глибокий контекст та швидкі відповіді.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🌟 Що таке VisionGate?</div>
+        <p class="guide-text">
+          <b>VisionGate</b> — це локальний шлюз-проксі (AI Gateway), який об'єднує твої облікові записи різних провайдерів (Google Antigravity, OpenAI Codex, Kimi, Claude, xAI, Meta) в єдину високопродуктивну точку доступу.
+        </p>
+        <p class="guide-text">
+          Шлюз повністю емулює офіційні API <b>Anthropic Messages</b> (для Claude Code, Cursor, Claude Desktop) та <b>OpenAI Chat Completions</b> (для Cline, Roo Code, Continue, LangChain). Твої інструменти розробки працюють так, ніби вони підключені безпосередньо до офіційних API, а VisionGate прозоро розподіляє навантаження, підмінює моделі, знімає фейкові системні промпти та балансує квоти.
+        </p>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <div class="card-title">⚙️ Як це працює «під капотом»?</div>
+          <ul class="guide-list">
+            <li><b>Вбудований рушій CLIProxyAPI:</b> Весь код проксі-рушія скомпільовано in-process безпосередньо в бінарний файл програми. Жодних зовнішніх залежностей або неконтрольованих фонових процесів.</li>
+            <li><b>Єдиний порт і Gin Engine:</b> Панель керування та AI-ендпоінти працюють на одному порту за спільним рушієм, використовуючи легке нативне вікно Windows WebView2.</li>
+            <li><b>Прозорий Request Rewriter:</b> Запити від Claude Code аналізуються на льоту. Якщо Claude Code надсилає запит на <code>claude-sonnet-5</code> або використовує внутрішній рівень Sonnet, шлюз миттєво підставляє реальну обрану тобою модель (наприклад, <code>gemini-3.8-flash-high</code>).</li>
+            <li><b>Очищення промптів (Uncloaking):</b> Виправляє фейкові системні директиви Claude Code, коли сторонні моделі примусово представлялися як «Claude Fable 5». Моделі чесно звітують про свою справжню сутність.</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🔄 Ротація акаунтів («Сушити всі акки»)</div>
+          <p class="guide-text">
+            <b>Тобі не потрібно обирати окремий акаунт для кожної задачі!</b> Усі підключені акаунти одного провайдера автоматично об'єднуються у спільний пул.
+          </p>
+          <ul class="guide-list">
+            <li>
+              <b>⚡ Викачувати по черзі (Fill-First / Сушити всі акки):</b>
+              Шлюз направляє 100% запитів на перший активний акаунт. Щойно провайдер повертає помилку вичерпання квоти <code>HTTP 429 (Resource Exhausted)</code>, шлюз автоматично перемикається на наступний акаунт без переривання твоєї сесії кодингу.
+            </li>
+            <li>
+              <b>🔄 По черзі (Round-Robin):</b>
+              Запити рівномірно чергуються між усіма підключеними акаунтами провайдера по колу, забезпечуючи рівномірне споживання лімітів.
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🚀 Покрокова інструкція швидкого старту (Claude Code)</div>
+        <div class="steps-box">
+          <div class="step-item">
+            <div class="step-num">1</div>
+            <div class="step-content">
+              <b>Підключи свої акаунти:</b> Перейди на вкладку <b>«Акаунти»</b> та натисни кнопки входу (наприклад, <code>Gemini-Antigravity</code>, <code>Codex</code>, <code>Kimi</code>). Авторизуйся у вікні браузера, що відкриється. Можна додати 2, 5, 10 чи більше акаунтів.
+            </div>
+          </div>
+          <div class="step-item">
+            <div class="step-num">2</div>
+            <div class="step-content">
+              <b>Обери стратегію ротації та моделі:</b> У вкладці <b>«Моделі»</b> обери режим ротації (наприклад, <i>Fill-First / Сушити всі акки</i>) та признач моделі для рівнів <b>Haiku</b>, <b>Sonnet</b>, <b>Opus</b> або офіційних імен Claude. Натисни <i>«Зберегти мапінг»</i>.
+            </div>
+          </div>
+          <div class="step-item">
+            <div class="step-num">3</div>
+            <div class="step-content">
+              <b>Запусти сервер:</b> Переконайся, що у вкладці <b>«Сервер»</b> горить зелений індикатор <i>«Працює»</i>. Якщо ні — натисни кнопку <i>«▶ Запустити»</i>.
+            </div>
+          </div>
+          <div class="step-item">
+            <div class="step-num">4</div>
+            <div class="step-content">
+              <b>Скопіюй змінні у свій термінал:</b> Скопіюй сніпет зі сторінки <b>«Сервер»</b> (кнопка <i>«Копіювати»</i>) та виконай його у терміналі:
+              <pre class="snippet mono small" style="margin-top:8px">export ANTHROPIC_BASE_URL="http://127.0.0.1:8337"
+export ANTHROPIC_AUTH_TOKEN="<твій_ключ>"
+export ANTHROPIC_MODEL="gemini-3.8-flash-high"</pre>
+            </div>
+          </div>
+          <div class="step-item">
+            <div class="step-num">5</div>
+            <div class="step-content">
+              <b>Працюй у Claude Code:</b> Запусти команду <code>claude</code> у терміналі. Тепер Claude Code працює через VisionGate, використовуючи потужність твоїх підключених моделей з автоматичною ротацією та захистом від лімітів!
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📖 Огляд розділів VisionGate</div>
+        <div class="grid2">
+          <div>
+            <h4 style="margin:0 0 4px;color:var(--accent-2)">◉ Сервер</h4>
+            <p class="small muted" style="margin-bottom:12px">Головний пульт: статус шлюзу, адреси ендпоінтів для клієнтів, генерація API-ключів, налаштування мережевого порту та готовий сніпет підключення для терміналу.</p>
+            <h4 style="margin:0 0 4px;color:var(--accent-2)">≡ Провайдери</h4>
+            <p class="small muted" style="margin-bottom:12px">Підключення зовнішніх OpenAI-сумісних API зі своїми ключами та URL (OpenRouter, DeepSeek, локальний Ollama тощо) та прямих API-ключів провайдерів.</p>
+            <h4 style="margin:0 0 4px;color:var(--accent-2)">▤ Моделі</h4>
+            <p class="small muted" style="margin-bottom:12px">Керування логікою підміни: вибір стратегії ротації акаунтів (Round-Robin або Fill-First), мапінг рівнів Haiku/Sonnet/Opus та індивідуальна підміна будь-якої офіційної моделі Claude.</p>
+          </div>
+          <div>
+            <h4 style="margin:0 0 4px;color:var(--accent-2)">◆ Акаунти</h4>
+            <p class="small muted" style="margin-bottom:12px">Управління підключеними OAuth-акаунтами: додавання нових акаунтів через браузер, перевірка статусу квот, переавторизація, видалення акаунтів та кнопка негайного скидання 429-лімітів.</p>
+            <h4 style="margin:0 0 4px;color:var(--accent-2)">▦ Статистика</h4>
+            <p class="small muted" style="margin-bottom:12px">Аналітика реального часу: загальні лічильники токенів (Prompt, Completion, Reasoning, Cache), відсоток успішності, живий статус квот кожного акаунта та черга останніх запитів (Live Usage Queue).</p>
+            <h4 style="margin:0 0 4px;color:var(--accent-2)">⚙ Налаштування</h4>
+            <p class="small muted" style="margin-bottom:12px">Мережева конфігурація (хост, порт), керування вимогами авторизаційного ключа та редагування розширеного конфігураційного YAML-файлу для досвідчених користувачів.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+<script src="app.js"></script>
+</body>
+</html>

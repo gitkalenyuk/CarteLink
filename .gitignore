@@ -1,0 +1,11 @@
+# build outputs
+*.exe
+dist/
+vgate-*
+# runtime data
+data/
+e2ehome/
+*.log
+# editor
+.vscode/
+.idea/
