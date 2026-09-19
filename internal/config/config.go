@@ -7,10 +7,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Version is the app version reported in /health and the UI.
@@ -114,16 +117,54 @@ func CliproxyDir() string     { return filepath.Join(DataDir(), "cliproxy") }
 func CliproxyAuthDir() string { return filepath.Join(CliproxyDir(), "auths") }
 func CliproxyLogsDir() string { return filepath.Join(CliproxyDir(), "logs") }
 
-// Load reads the config, falling back to defaults for missing/corrupt files.
+// ErrCorrupt is wrapped by Load when config.json exists but is not valid
+// JSON. The broken file is moved aside (config.json.corrupt-<time>) and
+// defaults are returned, so the caller can warn the user and continue.
+var ErrCorrupt = errors.New("config.json is corrupt")
+
+// Load reads the config, falling back to defaults for a missing file. A
+// corrupt file is backed up (never silently overwritten) and reported via
+// ErrCorrupt; the returned config is still usable.
 func Load() (*Config, error) {
 	cfg := Defaults()
 	raw, err := os.ReadFile(ConfigPath())
-	if err == nil {
-		// Tolerate a partial/corrupt file the way the Electron app does.
-		_ = json.Unmarshal(raw, cfg)
+	if err == nil && len(strings.TrimSpace(string(raw))) > 0 {
+		if jsonErr := json.Unmarshal(raw, cfg); jsonErr != nil {
+			backup := ConfigPath() + ".corrupt-" + time.Now().Format("20060102-150405")
+			_ = os.Rename(ConfigPath(), backup)
+			cfg = Defaults()
+			Normalize(cfg)
+			return cfg, fmt.Errorf("%w: %v (backup: %s)", ErrCorrupt, jsonErr, backup)
+		}
 	}
 	Normalize(cfg)
 	return cfg, nil
+}
+
+// DisplayHost renders a bind host as something a client can connect to:
+// wildcard binds ("", 0.0.0.0, ::) become 127.0.0.1.
+func DisplayHost(h string) string {
+	switch strings.TrimSpace(h) {
+	case "", "0.0.0.0", "::", "[::]":
+		return "127.0.0.1"
+	}
+	return strings.TrimSpace(h)
+}
+
+// Clone returns a deep copy of the config (slices and maps are copied), so
+// handlers can mutate a copy and swap it in atomically.
+func (c *Config) Clone() *Config {
+	b, err := json.Marshal(c)
+	if err != nil {
+		cp := *c
+		return &cp
+	}
+	out := &Config{}
+	if err := json.Unmarshal(b, out); err != nil {
+		cp := *c
+		return &cp
+	}
+	return out
 }
 
 // Save persists the config with 2-space indent (matches the Electron format).

@@ -9,13 +9,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os/exec"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
+
+	"visiongate/internal/config"
 )
 
 var browserFlows = map[string]bool{
@@ -32,7 +36,7 @@ const mgmtTimeout = 20 * time.Second
 // embedded engine on 127.0.0.1:<port>.
 func (a *App) mgmtRequest(method, path string, body []byte) (int, []byte, string) {
 	cfg := a.snapshotConfig()
-	full := fmt.Sprintf("http://127.0.0.1:%d%s", cfg.Cliproxy.Port, path)
+	full := fmt.Sprintf("http://%s%s", net.JoinHostPort(config.DisplayHost(cfg.Cliproxy.Host), strconv.Itoa(cfg.Cliproxy.Port)), path)
 	var rdr io.Reader
 	if body != nil {
 		rdr = bytes.NewReader(body)

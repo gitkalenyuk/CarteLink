@@ -7,7 +7,9 @@ function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // ---------- toast + copy ----------
@@ -89,6 +91,7 @@ function msg(el, text, ok) {
 
 // ---------- server page: status card ----------
 let LAST_STATUS = null;
+let LAST_EP = null;
 
 async function refreshServer() {
   try {
@@ -102,27 +105,68 @@ async function refreshServer() {
 }
 
 function paintServerStatus(st) {
-  const running = !!(st.engine && st.engine.running);
+  const eng = st.engine || {};
+  const running = !!eng.running;
+  const restarting = !!eng.restarting;
+  const paused = !!eng.paused;
+  const host = displayHost(eng.host);
+  let headline = running ? 'Працює' : 'Зупинено';
+  let sub = running ? 'Слухаю http://' + host + ':' + eng.port : 'Шлюз не працює.';
+  if (restarting) { headline = 'Перезапуск…'; sub = 'Рушій перезапускається.'; }
+  else if (paused) { sub = 'Пауза: запити до API отримують 503, панель працює.'; }
+  if (eng.lastError) { sub += ' Помилка: ' + eng.lastError; }
   $('bigDot').className = 'big-dot ' + (running ? 'on' : 'off');
-  $('statusHeadline').textContent = running ? 'Працює' : 'Зупинено';
-  $('statusSub').textContent = running
-    ? 'Слухаю http://127.0.0.1:' + st.engine.port
-    : 'Шлюз не працює.';
-  $('btnStart').disabled = running;
-  $('btnStop').disabled = !running;
-  $('btnRestart').disabled = !running;
+  $('statusHeadline').textContent = headline;
+  $('statusSub').textContent = sub;
+  $('btnStart').disabled = running || restarting;
+  $('btnStop').disabled = !running || restarting;
+  $('btnRestart').disabled = restarting;
   // The Акаунти page mirrors the same engine state.
   $('cpBigDot').className = 'big-dot ' + (running ? 'on' : 'off');
-  $('cpStatusHeadline').textContent = running ? 'Працює' : 'Зупинено';
+  $('cpStatusHeadline').textContent = headline;
   $('cpStatusSub').textContent = running
-    ? 'Рушій CLIProxyAPI v' + (st.engine.version || '') + ' слухає порт ' + st.engine.port + '.'
-    : 'Рушій CLIProxyAPI не працює.';
-  $('cpBtnStart').disabled = running;
-  $('cpBtnStop').disabled = !running;
-  $('cpBtnRestart').disabled = !running;
+    ? 'Рушій CLIProxyAPI v' + (eng.version || '') + ' слухає ' + host + ':' + eng.port + '.'
+    : (restarting ? 'Рушій перезапускається.' : 'Рушій CLIProxyAPI не працює.');
+  $('cpBtnStart').disabled = running || restarting;
+  $('cpBtnStop').disabled = !running || restarting;
+  $('cpBtnRestart').disabled = restarting;
+}
+
+function displayHost(h) {
+  h = String(h || '').trim();
+  if (!h || h === '0.0.0.0' || h === '::' || h === '[::]') return '127.0.0.1';
+  return h;
+}
+
+// After a restart the engine may come back on another port: poll its
+// /healthz and move the window there.
+async function followRestart(host, port) {
+  const cur = location.host;
+  const next = displayHost(host) + ':' + port;
+  const base = location.protocol + '//' + next;
+  const deadline = Date.now() + 20000;
+  await new Promise((r) => setTimeout(r, 900));
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(base + '/api/status', { cache: 'no-store' });
+      if (res.ok) {
+        const st = await res.json();
+        if (st.engine && st.engine.running && !st.engine.restarting) {
+          if (next !== cur) { location.href = base + '/ui/'; return; }
+          toast('Працює ✓');
+          refreshServer();
+          return;
+        }
+      }
+    } catch (e) { /* not up yet */ }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  toast('Рушій не відповів за 20 с — перевір лог app.log', true);
+  refreshServer();
 }
 
 function paintEndpoints(ep) {
+  LAST_EP = ep;
   $('epOpenAI').value = ep.openai;
   $('epAnthropic').value = ep.anthropic;
   $('apiKey').value = ep.key || '';
@@ -207,6 +251,7 @@ function fillDefaultModelSelect(ep) {
 
 // ---------- Claude Code snippet ----------
 function renderSnippet(ep) {
+  ep = ep || LAST_EP;
   const port = (LAST_STATUS && LAST_STATUS.engine && LAST_STATUS.engine.port) || 8317;
   const base = (ep && ep.anthropic) || ('http://127.0.0.1:' + port);
   const requireKey = LAST_STATUS ? LAST_STATUS.requireKey !== false : true;
@@ -236,6 +281,7 @@ async function serverAction(kind) {
   try {
     const r = await api('/server/' + kind, { method: 'POST' });
     if (r.ok === false) { toast(r.error || 'Не вдалось', true); }
+    else if (r.restarting) { followRestart(r.host, r.port); return; }
     else { toast(kind === 'stop' ? 'Зупинено' : 'Працює ✓'); }
   } catch (e) {
     toast('Помилка: ' + e.message, true);
@@ -291,7 +337,7 @@ $('btnApplyPort').addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(cfg),
     });
-    toast('Порт ' + port + ' збережено. Перезапусти програму (або натисни Перезапустити).');
+    toast('Порт ' + port + ' збережено — натисни «Перезапустити», щоб застосувати.');
     refreshServer();
   } catch (e) { toast('Помилка: ' + e.message, true); }
 });
@@ -964,7 +1010,15 @@ function pollOauth(state) {
   clearInterval(oauthTimer);
   const st = $('oauth-status');
   let unknownErrors = 0;
+  const deadline = Date.now() + 10 * 60 * 1000;
   oauthTimer = setInterval(async () => {
+    if (Date.now() > deadline) {
+      clearInterval(oauthTimer);
+      st.textContent = 'Час очікування входу вичерпано (10 хв). Спробуй ще раз.';
+      st.className = 'msg err';
+      fetch('/api/cliproxy/oauth/cancel?state=' + encodeURIComponent(state), { method: 'DELETE' }).catch(() => {});
+      return;
+    }
     try {
       const r = await fetch('/api/cliproxy/oauth/status?state=' + encodeURIComponent(state));
       const j = await r.json();
@@ -1210,7 +1264,30 @@ $('clip-key-add').addEventListener('click', setClipKeys);
 $('auth-refresh').addEventListener('click', renderAuthFiles);
 
 // ---------- metrics page (live usage-queue + auth-files quotas) ----------
-let usageHistory = [];
+const USAGE_STORE_KEY = 'vg.usageHistory';
+let usageHistory = loadUsageHistory();
+
+function loadUsageHistory() {
+  try {
+    const raw = localStorage.getItem(USAGE_STORE_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+
+function saveUsageHistory() {
+  try { localStorage.setItem(USAGE_STORE_KEY, JSON.stringify(usageHistory.slice(0, 500))); } catch (e) { /* quota */ }
+}
+
+// The engine pops records off its queue (each one is delivered exactly
+// once) and encodes every record as a JSON string — decode before use.
+function parseUsageRecord(item) {
+  if (item && typeof item === 'object') return item;
+  if (typeof item === 'string') {
+    try { const o = JSON.parse(item); if (o && typeof o === 'object') return o; } catch (e) { /* skip */ }
+  }
+  return null;
+}
 
 async function refreshMetrics() {
   let authFiles = [];
@@ -1222,7 +1299,11 @@ async function refreshMetrics() {
   try {
     const queue = await mgmt('GET', 'usage-queue?count=100');
     if (Array.isArray(queue) && queue.length > 0) {
-      usageHistory = queue.concat(usageHistory).slice(0, 500);
+      const fresh = queue.map(parseUsageRecord).filter(Boolean);
+      // Newest first; the queue itself is oldest-first.
+      fresh.reverse();
+      usageHistory = fresh.concat(usageHistory).slice(0, 500);
+      saveUsageHistory();
     }
   } catch (e) { /* ignore */ }
 
@@ -1454,7 +1535,7 @@ async function saveSettings() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(cfg),
     });
-    msg($('set-msg'), 'збережено (порт/хост — після перезапуску програми)', true);
+    msg($('set-msg'), 'збережено (порт/хост застосуються після «Перезапустити» на сторінці «Сервер»)', true);
   } catch (e) {
     msg($('set-msg'), 'помилка: ' + e.message, false);
   }
@@ -1469,7 +1550,7 @@ async function saveExtraYAML() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(cfg),
     });
-    msg($('set-extra-msg'), 'збережено (набуде чинності після перезапуску)', true);
+    msg($('set-extra-msg'), 'збережено — рушій підхопить зміни сам (або натисни «Перезапустити»)', true);
   } catch (e) {
     msg($('set-extra-msg'), 'помилка: ' + e.message, false);
   }

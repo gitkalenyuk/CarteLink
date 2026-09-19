@@ -17,6 +17,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -47,9 +48,13 @@ func main() {
 	flag.Parse()
 
 	cfg, err := config.Load()
-	if err != nil {
+	if err != nil && !errors.Is(err, config.ErrCorrupt) {
 		desktop.Alert("VisionGateGo", "Не вдалось прочитати налаштування: "+err.Error())
 		os.Exit(1)
+	}
+	configWarning := ""
+	if err != nil {
+		configWarning = "config.json був пошкоджений і замінений на налаштування за замовчуванням.\n\n" + err.Error()
 	}
 	if *portOverride > 0 {
 		cfg.Cliproxy.Port = *portOverride
@@ -62,7 +67,9 @@ func main() {
 	useGUI := runtime.GOOS == "windows" && !*headless && desktop.Supported()
 	if useGUI {
 		_ = os.MkdirAll(config.CliproxyLogsDir(), 0o755)
-		if f, err := os.OpenFile(filepath.Join(config.CliproxyLogsDir(), "app.log"),
+		logPath := filepath.Join(config.CliproxyLogsDir(), "app.log")
+		rotateLog(logPath, 5<<20)
+		if f, err := os.OpenFile(logPath,
 			os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
 			os.Stdout = f
 			os.Stderr = f
@@ -83,22 +90,27 @@ func main() {
 	if p, changed := pickFreePort(cfg.Cliproxy.Host, cfg.Cliproxy.Port); changed {
 		movedFrom = cfg.Cliproxy.Port
 		cfg.Cliproxy.Port = p
-		if err := cfg.Save(); err != nil {
+		if *portOverride > 0 {
+			log.Printf("port %d busy — VisionGateGo moved to %d (not saved: --port override)", movedFrom, p)
+		} else if err := cfg.Save(); err != nil {
 			log.Println("save config after port move:", err)
+		} else {
+			log.Printf("port %d busy — VisionGateGo moved to %d (saved)", movedFrom, p)
 		}
-		log.Printf("port %d busy — VisionGateGo moved to %d (saved)", movedFrom, p)
 	}
 
 	// The embedded service owns the listener; VisionGate mounts on top of it.
 	port := cfg.Cliproxy.Port
 	host := cfg.Cliproxy.Host
-	authDir := config.CliproxyAuthDir()
-	cfgPath := filepath.Join(config.CliproxyDir(), "config.yaml")
+	cfgPath := web.EngineCfgPath()
 
-	// Keep config.yaml aligned with our settings (management edits preserved).
-	wantYAML := cliproxy.BuildConfigYAML(host, port, cfg.Cliproxy.ManagementSecret, authDir, cfg.Cliproxy.APIKeys, cfg.RequireKey, cfg.Cliproxy.ExtraConfigYAML)
-	if err := cliproxy.WriteConfigIfChanged(cfgPath, wantYAML, strconv.Itoa(port), cfg.Cliproxy.ManagementSecret); err != nil {
+	// Keep config.yaml aligned with our settings (management edits preserved:
+	// only the keys VisionGate owns are rewritten).
+	if err := app.SyncYAML(cfg); err != nil {
 		fail(useGUI, "config.yaml", err)
+	}
+	if err := cfg.Save(); err != nil {
+		log.Println("save config:", err)
 	}
 
 	// Mount VisionGate GUI + control API on the shared Gin engine.
@@ -126,8 +138,20 @@ func main() {
 			return
 		}
 		p := c.Request.URL.Path
+		// The control API has no auth of its own, and the engine answers
+		// every route with "Access-Control-Allow-Origin: *". Without this
+		// gate any web page open in the user's browser could read the
+		// config (API key) or drive the Management API passthrough.
+		if strings.HasPrefix(p, "/api/") && !sameOriginRequest(c.Request) {
+			c.AbortWithStatusJSON(403, gin.H{"ok": false, "error": "cross-origin access to the control API is not allowed"})
+			return
+		}
+		// Panel surface: the GUI, its control API, the engine's own
+		// management API (the control API proxies to it) and healthz stay
+		// reachable while API traffic is paused.
 		isPanel := p == "/ui/" || strings.HasPrefix(p, "/ui/") ||
-			strings.HasPrefix(p, "/api/") || p == "/healthz"
+			strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/v0/management/") ||
+			p == "/management.html" || p == "/healthz"
 		if !isPanel && app.Paused() {
 			c.AbortWithStatusJSON(503, gin.H{
 				"error": gin.H{
@@ -153,7 +177,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	base := "http://" + displayHost(host) + ":" + strconv.Itoa(port)
+	base := "http://" + config.DisplayHost(host) + ":" + strconv.Itoa(port)
 
 	emb := cliproxy.NewEmbedded(mount, root)
 	app.SetEmbedded(emb)
@@ -210,6 +234,15 @@ func main() {
 		emb.Stop()
 		os.Exit(0)
 	}()
+
+	if configWarning != "" {
+		log.Println(configWarning)
+		if useGUI {
+			desktop.Alert("VisionGateGo", configWarning)
+		} else {
+			fmt.Fprintln(os.Stderr, configWarning)
+		}
+	}
 
 	if useGUI {
 		// The desktop app: one window, opened automatically. Closing the
@@ -349,7 +382,8 @@ func rewriteModel(c *gin.Context, app *web.App) {
 	}
 
 	want, _ := payload["model"].(string)
-	resolved := resolveModelName(app.CurrentConfig(), want)
+	cfg := app.CurrentConfig()
+	resolved := resolveModelName(cfg, want)
 	changed := false
 	if resolved != want {
 		payload["model"] = resolved
@@ -359,6 +393,18 @@ func rewriteModel(c *gin.Context, app *web.App) {
 	targetModel := resolved
 	if targetModel == "" {
 		targetModel = uncloakClaudeDDModel(want)
+	}
+
+	// The blacklist is a hard block, not just a filter on /v1/models.
+	if isBlacklisted(cfg, targetModel) || isBlacklisted(cfg, want) {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"type": "error",
+			"error": gin.H{
+				"type":    "invalid_request_error",
+				"message": "model " + targetModel + " is blocked by the VisionGate model blacklist",
+			},
+		})
+		return
 	}
 
 	// Clean Claude Code's artificial "You are powered by the model named Fable 5"
@@ -513,12 +559,60 @@ func fail(useGUI bool, what string, err error) {
 	os.Exit(1)
 }
 
-// displayHost renders the host for humans (empty = all interfaces).
-func displayHost(h string) string {
-	if h == "" {
-		return "127.0.0.1"
+// isBlacklisted reports whether a model id is on the configured blacklist.
+func isBlacklisted(cfg *config.Config, model string) bool {
+	if cfg == nil || model == "" {
+		return false
 	}
-	return h
+	m := strings.ToLower(strings.TrimSpace(model))
+	for _, b := range cfg.ModelBlacklist {
+		if strings.ToLower(strings.TrimSpace(b)) == m {
+			return true
+		}
+	}
+	return false
+}
+
+// sameOriginRequest decides whether a control-API request may proceed.
+// Non-browser clients (no Origin, no Sec-Fetch-Site) are local processes and
+// pass. Browser requests pass only when the Origin host matches the Host
+// header (the embedded window and a tab opened on the UI itself) and the
+// Host is a loopback/IP/localhost name — never a DNS-rebound public name.
+func sameOriginRequest(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	site := r.Header.Get("Sec-Fetch-Site")
+	if origin == "" && (site == "" || site == "none" || site == "same-origin") {
+		return true
+	}
+	if site == "cross-site" {
+		return false
+	}
+	if origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || !strings.EqualFold(u.Host, r.Host) {
+			return false
+		}
+	}
+	hostOnly := r.Host
+	if h, _, err := net.SplitHostPort(r.Host); err == nil {
+		hostOnly = h
+	}
+	hostOnly = strings.Trim(hostOnly, "[]")
+	if strings.EqualFold(hostOnly, "localhost") || net.ParseIP(hostOnly) != nil {
+		return true
+	}
+	return false
+}
+
+// rotateLog keeps app.log bounded: once it exceeds maxBytes the current file
+// becomes app.log.1 (replacing the previous one) and a fresh log is started.
+func rotateLog(path string, maxBytes int64) {
+	fi, err := os.Stat(path)
+	if err != nil || fi.Size() < maxBytes {
+		return
+	}
+	_ = os.Remove(path + ".1")
+	_ = os.Rename(path, path+".1")
 }
 
 // openBrowser opens the default browser cross-platform (console fallback).

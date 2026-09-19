@@ -33,14 +33,21 @@ func (a *App) apiServerStop(w http.ResponseWriter, r *http.Request) {
 	jsonWrite(w, http.StatusOK, anyMap{"ok": true, "running": false})
 }
 
-// apiServerRestart: POST /api/server/restart
+// apiServerRestart: POST /api/server/restart — tears the engine down and
+// rebuilds it from the saved config in the background. The reply carries the
+// port the engine will come back on so the UI can follow it.
 func (a *App) apiServerRestart(w http.ResponseWriter, r *http.Request) {
 	if err := a.EngineRestart(); err != nil {
 		jsonWrite(w, http.StatusConflict, anyMap{"ok": false, "error": err.Error()})
 		return
 	}
-	ready := a.waitForEngine(5 * time.Second)
-	jsonWrite(w, http.StatusOK, anyMap{"ok": true, "running": ready})
+	cfg := a.snapshotConfig()
+	jsonWrite(w, http.StatusOK, anyMap{
+		"ok":         true,
+		"restarting": true,
+		"port":       cfg.Cliproxy.Port,
+		"host":       config.DisplayHost(cfg.Cliproxy.Host),
+	})
 }
 
 // waitForEngine polls the engine state plus a live /healthz probe until the
@@ -49,9 +56,9 @@ func (a *App) waitForEngine(timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if a.EngineRunning() {
-			port := a.snapshotConfig().Cliproxy.Port
+			cfg := a.snapshotConfig()
 			client := &http.Client{Timeout: time.Second}
-			if resp, err := client.Get("http://127.0.0.1:" + itoa(port) + "/healthz"); err == nil {
+			if resp, err := client.Get("http://" + config.DisplayHost(cfg.Cliproxy.Host) + ":" + itoa(cfg.Cliproxy.Port) + "/healthz"); err == nil {
 				_ = resp.Body.Close()
 				if resp.StatusCode >= 200 && resp.StatusCode < 500 {
 					return true
@@ -67,21 +74,34 @@ func (a *App) waitForEngine(timeout time.Duration) bool {
 // a fresh random "vg-…" one and persist it. The engine's client key list is
 // updated live through the management API so the new key works immediately.
 func (a *App) apiGenerateKey(w http.ResponseWriter, r *http.Request) {
-	cfg := a.snapshotConfig()
+	// Work on a copy: the live config is read by the request middleware on
+	// every call, so it must never be mutated in place.
+	cfg := a.snapshotConfig().Clone()
+	old := cfg.APIKey
 	cfg.APIKey = "vg-" + randomHex(24)
 	if cfg.RequireKey {
-		// Keep the engine in sync: the VisionGate key is the first client key.
-		keys := append([]string{cfg.APIKey}, cfg.Cliproxy.APIKeys...)
-		if status, raw, _ := a.mgmtRequest(http.MethodPut, "/v0/management/api-keys", mustJSON(keys)); status >= 300 {
-			// Engine refused (offline?) — config still saved; YAML syncs on restart.
-			_ = raw
+		// The VisionGate key is the first client key; the previous one is
+		// retired so old copies stop working.
+		keys := []string{cfg.APIKey}
+		for _, k := range cfg.Cliproxy.APIKeys {
+			if k != old && k != cfg.APIKey {
+				keys = append(keys, k)
+			}
 		}
 		cfg.Cliproxy.APIKeys = keys
+		// Push live so the new key works immediately (config.yaml is synced
+		// below as well, which also drops the retired key there).
+		_, _, _ = a.mgmtRequest(http.MethodPut, "/v0/management/api-keys", mustJSON(keys))
+	}
+	if err := a.SyncYAML(cfg); err != nil {
+		jsonWrite(w, http.StatusInternalServerError, anyMap{"ok": false, "error": err.Error()})
+		return
 	}
 	if err := cfg.Save(); err != nil {
 		jsonWrite(w, http.StatusInternalServerError, anyMap{"ok": false, "error": err.Error()})
 		return
 	}
+	a.SetConfig(cfg)
 	jsonWrite(w, http.StatusOK, anyMap{"ok": true, "key": cfg.APIKey})
 }
 
@@ -134,7 +154,7 @@ func (a *App) apiAccountToProvider(w http.ResponseWriter, r *http.Request) {
 	id := "cp-" + family + "-" + shortID(name)
 
 	a.mu.Lock()
-	cfg := a.cfg
+	cfg := a.cfg.Clone()
 	replaced := false
 	for i := range cfg.Providers {
 		if cfg.Providers[i].ID == id {
@@ -156,6 +176,9 @@ func (a *App) apiAccountToProvider(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	err := cfg.Save()
+	if err == nil {
+		a.cfg = cfg
+	}
 	a.mu.Unlock()
 	if err != nil {
 		jsonWrite(w, http.StatusInternalServerError, anyMap{"ok": false, "error": err.Error()})

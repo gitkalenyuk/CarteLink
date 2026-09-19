@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -28,10 +27,13 @@ func (a *App) apiStatus(w http.ResponseWriter, r *http.Request) {
 	resp := anyMap{
 		"version": config.Version,
 		"engine": anyMap{
-			"running": running,
-			"port":    cfg.Cliproxy.Port,
-			"host":    cfg.Cliproxy.Host,
-			"version": cliproxy.UpstreamVersion,
+			"running":    running,
+			"paused":     a.Paused(),
+			"restarting": a.Restarting(),
+			"lastError":  a.LastError(),
+			"port":       cfg.Cliproxy.Port,
+			"host":       cfg.Cliproxy.Host,
+			"version":    cliproxy.UpstreamVersion,
 		},
 		"requireKey": cfg.RequireKey,
 		"routing":    cfg.Routing,
@@ -43,7 +45,7 @@ func (a *App) apiStatus(w http.ResponseWriter, r *http.Request) {
 // apiEndpoints returns the absolute URLs the UI shows for copy-paste.
 func (a *App) apiEndpoints(w http.ResponseWriter, r *http.Request) {
 	cfg := a.snapshotConfig()
-	base := "http://" + displayHost(cfg.Cliproxy.Host) + ":" + itoa(cfg.Cliproxy.Port)
+	base := "http://" + config.DisplayHost(cfg.Cliproxy.Host) + ":" + itoa(cfg.Cliproxy.Port)
 	key := cfg.APIKey
 	if len(cfg.Cliproxy.APIKeys) > 0 {
 		key = cfg.Cliproxy.APIKeys[0]
@@ -84,23 +86,24 @@ func (a *App) apiConfigSave(w http.ResponseWriter, r *http.Request) {
 		jsonWrite(w, http.StatusBadRequest, anyMap{"ok": false, "error": "invalid config: " + err.Error()})
 		return
 	}
-	prevSecret := a.snapshotConfig().Cliproxy.ManagementSecret
+	prev := a.snapshotConfig()
 	if fresh.Cliproxy.ManagementSecret == "" {
-		fresh.Cliproxy.ManagementSecret = prevSecret
+		fresh.Cliproxy.ManagementSecret = prev.Cliproxy.ManagementSecret
 	}
 	config.Normalize(fresh)
+	// Sync the engine config first: it may fail on bad extra YAML, and it
+	// merges engine-side api-keys into fresh before it is persisted.
+	if err := a.SyncYAML(fresh); err != nil {
+		jsonWrite(w, http.StatusBadRequest, anyMap{"ok": false, "error": err.Error()})
+		return
+	}
 	if err := fresh.Save(); err != nil {
 		jsonWrite(w, http.StatusInternalServerError, anyMap{"ok": false, "error": err.Error()})
 		return
 	}
 	a.SetConfig(fresh)
-	cfgPath := filepath.Join(config.CliproxyDir(), "config.yaml")
-	wantYAML := cliproxy.BuildConfigYAML(fresh.Cliproxy.Host, fresh.Cliproxy.Port, fresh.Cliproxy.ManagementSecret, config.CliproxyAuthDir(), fresh.Cliproxy.APIKeys, fresh.RequireKey, fresh.Cliproxy.ExtraConfigYAML)
-	if err := cliproxy.WriteConfigIfChanged(cfgPath, wantYAML, strconv.Itoa(fresh.Cliproxy.Port), fresh.Cliproxy.ManagementSecret); err != nil {
-		jsonWrite(w, http.StatusInternalServerError, anyMap{"ok": false, "error": err.Error()})
-		return
-	}
-	jsonWrite(w, http.StatusOK, anyMap{"ok": true})
+	needsRestart := fresh.Cliproxy.Port != prev.Cliproxy.Port || fresh.Cliproxy.Host != prev.Cliproxy.Host
+	jsonWrite(w, http.StatusOK, anyMap{"ok": true, "needsRestart": needsRestart, "port": fresh.Cliproxy.Port})
 }
 
 // snapshotConfig returns the current config pointer.
@@ -122,12 +125,4 @@ func (a *App) embedded() *cliproxy.Embedded {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.cp
-}
-
-// displayHost renders the host for humans (empty = all interfaces).
-func displayHost(h string) string {
-	if h == "" {
-		return "127.0.0.1"
-	}
-	return h
 }

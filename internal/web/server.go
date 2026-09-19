@@ -9,8 +9,10 @@ import (
 	"embed"
 	"errors"
 	"io/fs"
+	"log"
 	"net/http"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -43,6 +45,11 @@ type App struct {
 	// stays up — the panel lives on the same port, so a hard Stop would kill
 	// the UI's own control API too (see the root middleware in main.go).
 	paused atomic.Bool
+	// restarting is set while EngineRestart tears the engine down and brings
+	// it back (possibly on another port); lastError keeps the most recent
+	// start failure for the status endpoint.
+	restarting atomic.Bool
+	lastError  string
 }
 
 // NewApp builds the app around the config. The embedded service reference is
@@ -98,10 +105,86 @@ func (a *App) EngineStop() {
 	a.paused.Store(true)
 }
 
-// EngineRestart resumes processing immediately (the embedded server never
-// actually stopped); if the engine process has died for real, it is rebuilt.
+// EngineRestart really restarts the embedded engine: the current service is
+// shut down and a fresh one is built from config.yaml (so a saved port/host
+// change takes effect). The work runs in the background after a short delay
+// so the HTTP response that triggered it can still be delivered by the old
+// server; callers poll /status (on the new port if it changed).
 func (a *App) EngineRestart() error {
-	return a.EngineStart()
+	a.mu.Lock()
+	e := a.cp
+	ctx, cfgPath := a.rootCtx, a.cfgPath
+	a.mu.Unlock()
+	if e == nil || ctx == nil {
+		return errors.New("engine is not initialized yet")
+	}
+	if !a.restarting.CompareAndSwap(false, true) {
+		return errors.New("restart already in progress")
+	}
+	go func() {
+		defer a.restarting.Store(false)
+		time.Sleep(400 * time.Millisecond)
+		a.paused.Store(false)
+		e.Stop()
+		if err := e.Start(ctx, cfgPath); err != nil {
+			log.Println("engine restart failed:", err)
+			a.setLastError("restart failed: " + err.Error())
+			return
+		}
+		a.setLastError("")
+	}()
+	return nil
+}
+
+// Restarting reports whether a restart is in flight.
+func (a *App) Restarting() bool { return a.restarting.Load() }
+
+func (a *App) setLastError(s string) {
+	a.mu.Lock()
+	a.lastError = s
+	a.mu.Unlock()
+}
+
+// LastError returns the most recent engine start/restart failure ("" if none).
+func (a *App) LastError() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.lastError
+}
+
+// EngineCfgPath returns the engine config.yaml path.
+func EngineCfgPath() string { return filepath.Join(config.CliproxyDir(), "config.yaml") }
+
+// SyncYAML writes the managed keys of cfg into config.yaml. API keys that
+// were added to the engine through the Management API (they live only in
+// config.yaml) are merged into cfg.Cliproxy.APIKeys so the two files agree;
+// the caller is expected to Save() cfg afterwards.
+func (a *App) SyncYAML(cfg *config.Config) error {
+	path := EngineCfgPath()
+	if cfg.RequireKey {
+		seen := map[string]bool{}
+		merged := make([]string, 0, len(cfg.Cliproxy.APIKeys)+2)
+		for _, k := range append(append([]string{}, cfg.Cliproxy.APIKeys...), cliproxy.ReadAPIKeys(path)...) {
+			if k == "" || k == "vg-cliproxy-default-key" || seen[k] {
+				continue
+			}
+			seen[k] = true
+			merged = append(merged, k)
+		}
+		if len(merged) == 0 && cfg.APIKey != "" {
+			merged = append(merged, cfg.APIKey)
+		}
+		cfg.Cliproxy.APIKeys = merged
+	}
+	return cliproxy.SyncConfigYAML(path, cliproxy.Managed{
+		Host:       cfg.Cliproxy.Host,
+		Port:       cfg.Cliproxy.Port,
+		Secret:     cfg.Cliproxy.ManagementSecret,
+		AuthDir:    config.CliproxyAuthDir(),
+		APIKeys:    cfg.Cliproxy.APIKeys,
+		RequireKey: cfg.RequireKey,
+		ExtraYAML:  cfg.Cliproxy.ExtraConfigYAML,
+	})
 }
 
 // EngineRunning reports whether the engine accepts API traffic right now.
