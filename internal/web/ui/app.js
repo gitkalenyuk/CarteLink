@@ -1,5 +1,5 @@
 'use strict';
-// CartelGate UI — talks to /api/* on the same origin as the engine.
+// CarteLink UI — talks to /api/* on the same origin as the engine.
 
 const $ = (id) => document.getElementById(id);
 
@@ -82,7 +82,7 @@ function msg(el, text, ok) {
     const moved = q.get('moved');
     if (moved && $('port-banner')) {
       $('port-banner').textContent =
-        'Порт ' + moved + ' був зайнятий іншою програмою, тому CartelGate запустився на порту ' +
+        'Порт ' + moved + ' був зайнятий іншою програмою, тому CarteLink запустився на порту ' +
         (q.get('port') || '(див. Endpoints нижче)') + '. Все працює — просто адреса інша.';
       $('port-banner').style.display = '';
     }
@@ -553,7 +553,7 @@ async function collectModelOptions() {
     }
   }
 
-  // 2. Account providers from the CartelGate config
+  // 2. Account providers from the CarteLink config
   try {
     const cfg = await api('/config');
     for (const p of (cfg.providers || [])) {
@@ -1292,6 +1292,11 @@ function renderOauthButtons() {
 
 async function startOauth(provider) {
   const st = $('oauth-status');
+  if ($('statusHeadline') && $('statusHeadline').textContent.trim() === 'Зупинено') {
+    st.textContent = 'Рушій зупинено! Спочатку натисніть кнопку "Запустити" на панелі вгорі.';
+    st.className = 'msg err';
+    return;
+  }
   st.textContent = 'Запускаю вхід ' + provider + '…';
   st.className = 'msg';
   try {
@@ -1300,16 +1305,20 @@ async function startOauth(provider) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ provider: provider }),
     });
-    const j = await r.json();
-    if (j.url) {
-      st.innerHTML = '<a href="' + esc(j.url) + '" target="_blank" style="color:var(--accent-2)">Відкрити сторінку входу ↗</a>';
-      if (j.state) pollOauth(j.state);
-    } else {
-      st.textContent = j.error || ('не вдалось (' + r.status + ')');
+    const text = await r.text();
+    let j = null;
+    try {
+      j = text ? JSON.parse(text) : null;
+    } catch (parseErr) { /* non-json response */ }
+    if (!r.ok || !j || !j.url) {
+      st.textContent = (j && (j.error || j.message)) || text || ('Не вдалось (' + r.status + ')');
       st.className = 'msg err';
+      return;
     }
+    st.innerHTML = '<a href="' + esc(j.url) + '" target="_blank" style="color:var(--accent-2)">Відкрити сторінку входу ↗</a>';
+    if (j.state) pollOauth(j.state);
   } catch (e) {
-    st.textContent = 'помилка: ' + e.message;
+    st.textContent = 'Помилка: ' + e.message;
     st.className = 'msg err';
   }
 }
@@ -1329,7 +1338,10 @@ function pollOauth(state) {
     }
     try {
       const r = await fetch('/api/cliproxy/oauth/status?state=' + encodeURIComponent(state));
-      const j = await r.json();
+      const text = await r.text();
+      let j = null;
+      try { j = text ? JSON.parse(text) : null; } catch (e) {}
+      if (!j) return;
       const status = j.status || '';
       if (status === 'ok' || status === 'success' || j.completed === true) {
         clearInterval(oauthTimer);
@@ -1829,6 +1841,21 @@ async function refreshSettings() {
     $('set-extra').value = cfg.cliproxy.extraConfigYAML || '';
     renderBlacklistTags(cfg.modelBlacklist || []);
   } catch (e) { /* keep old */ }
+
+  try {
+    const st = await api('/auth/status');
+    if ($('set-auth-status')) {
+      const isAuth = st.status === 'authorized' || !st.enabled;
+      $('set-auth-status').textContent = isAuth ? '✅ Доступ надано (Secret YT_cartel 🧠)' : (st.status === 'awaiting' ? '⏳ Очікуємо підтвердження у браузері' : '🔒 Потрібна авторизація');
+      $('set-auth-status').style.color = isAuth ? 'var(--ok, #34d399)' : 'var(--warn, #f59e0b)';
+    }
+    if ($('set-auth-user')) {
+      const u = st.user;
+      $('set-auth-user').textContent = u ? ((u.name || '') + (u.username ? ' (@' + u.username + ')' : '') + ' · ID: ' + (u.id || '')) : (st.enabled ? 'Не авторизовано' : 'Авторизацію вимкнено в конфігурації');
+    }
+    if ($('set-btn-login')) $('set-btn-login').style.display = (st.status === 'need_login' || st.status === 'denied') ? '' : 'none';
+    if ($('set-btn-logout')) $('set-btn-logout').style.display = (st.status === 'authorized') ? '' : 'none';
+  } catch (e) { /* keep old */ }
 }
 
 async function saveSettings() {
@@ -2143,7 +2170,184 @@ if ($('set-blacklist-add')) {
   });
 }
 
+// ================= TELEGRAM ACCESS GATE =================
+const SVG_TG = '<svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:currentColor;vertical-align:middle;margin-right:6px"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg>';
+let currentAuthState = null;
+let authPollTimer = null;
+
+function renderUserBox(user) {
+  const box = $('userBox');
+  if (!box) return;
+  if (!user) {
+    box.style.display = 'none';
+    return;
+  }
+  const name = user.name || (user.username ? '@' + user.username : 'Учасник');
+  if ($('userName')) $('userName').textContent = name;
+  box.style.display = 'flex';
+}
+
+function renderGate(state) {
+  const s = (state && state.status) || 'loading';
+  const reason = state && state.reason;
+  let html = '';
+
+  if (s === 'loading') {
+    html = '<div class="gate-spin"></div><h1>Перевіряємо доступ…</h1><p>Підтверджуємо членство у спільноті Secret YT_cartel 🧠</p>';
+  } else if (s === 'awaiting') {
+    html = '<div class="gate-spin"></div><h1>Заверши вхід у браузері</h1><p>Відкрився браузер — увійди через Telegram і дозволь доступ. Це вікно оновиться автоматично.</p>'
+      + '<button class="gate-btn alt" id="gLogin">Відкрити браузер ще раз</button>'
+      + '<button class="gate-btn alt" id="gRecheck">Я вже увійшов — перевірити</button>'
+      + '<button class="gate-btn ghost" id="gLogout">Скасувати</button>';
+  } else if (s === 'need_login') {
+    html = '<h1>Вхід для своїх</h1><p>Увійди через Telegram. Доступ відкривається для учасників закритої спільноти <b>Secret YT_cartel 🧠</b>.</p>'
+      + '<button class="gate-btn" id="gLogin">' + SVG_TG + '<span>Увійти через Telegram</span></button>'
+      + '<button class="gate-btn alt" id="gRecheck">Я вже входив — перевірити</button>'
+      + '<div class="gate-note">Відкриється офіційне вікно Telegram для авторизації. Ми не бачимо твій пароль чи номер — лише підтвердження від Telegram.</div>';
+  } else if (s === 'trial_expired' || reason === 'trial_expired') {
+    html = '<h1>Тріал завершився ⏳</h1><p>Твій безкоштовний пробний доступ вичерпано. Щоб продовжити користуватися CarteLink, оформи підписку на спільноту <b>Secret YT_cartel 🧠</b>.</p>'
+      + '<a class="gate-btn gold" href="https://t.me/tribute/app?startapp=eUb" target="_blank" style="text-decoration:none">⭐ <span>Оформити підписку через Tribute</span></a>'
+      + '<button class="gate-btn alt" id="gRecheck">Я оформив — перевірити</button>'
+      + '<button class="gate-btn alt" id="gLogin">↺ Змінити акаунт Telegram</button>'
+      + '<button class="gate-btn ghost" id="gLogout">Вийти</button>';
+  } else if (s === 'denied' || reason === 'not_member') {
+    html = '<h1>Доступ обмежено 🔒</h1><p>Ти увійшов у Telegram, але твій акаунт не є учасником закритої спільноти <b>Secret YT_cartel 🧠</b>.</p>'
+      + '<a class="gate-btn gold" href="https://t.me/tribute/app?startapp=eUb" target="_blank" style="text-decoration:none">🚀 <span>Отримати доступ (Secret YT_cartel 🧠)</span></a>'
+      + '<a class="gate-btn alt" href="https://t.me/+e_g6IwDlVhg4OGJi" target="_blank" style="text-decoration:none">📢 <span>Канал Cartel (пробний доступ)</span></a>'
+      + '<button class="gate-btn alt" id="gRecheck">Я вже вступив — перевірити знову</button>'
+      + '<button class="gate-btn alt" id="gLogin">↺ Увійти іншим акаунтом Telegram</button>'
+      + '<button class="gate-btn ghost" id="gLogout">Вийти</button>'
+      + '<div class="gate-note">Якщо ти щойно долучився до групи чи каналу — зачекай кілька секунд і натисни «перевірити знову».</div>';
+  } else {
+    html = '<h1>Помилка перевірки доступу</h1><p>Не вдалося підтвердити статус через сервер авторизації. Перевір з’єднання з інтернетом.</p>'
+      + '<button class="gate-btn" id="gRecheck">Спробувати ще раз</button>'
+      + '<button class="gate-btn alt" id="gLogin">Увійти через Telegram</button>'
+      + '<button class="gate-btn ghost" id="gLogout">Вийти</button>'
+      + (reason ? '<div class="gate-note" style="color:var(--err,#ff5c6c)">Причина: ' + esc(reason) + '</div>' : '');
+  }
+
+  const gateBody = $('gateBody');
+  if (gateBody) gateBody.innerHTML = html;
+
+  const bind = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+  bind('gLogin', startTelegramLogin);
+  bind('gRecheck', recheckAuth);
+  bind('gLogout', logoutTelegram);
+}
+
+function applyAuth(state) {
+  currentAuthState = state;
+  const isAuthed = !state.enabled || state.status === 'authorized';
+  document.body.classList.toggle('authed', !!isAuthed);
+
+  if (isAuthed) {
+    if (authPollTimer) {
+      clearInterval(authPollTimer);
+      authPollTimer = null;
+    }
+    renderUserBox(state.user);
+  } else {
+    renderUserBox(null);
+    renderGate(state);
+    if (state.status === 'awaiting' && !authPollTimer) {
+      authPollTimer = setInterval(async () => {
+        try {
+          const st = await api('/auth/status');
+          if (st.status === 'authorized') {
+            applyAuth(st);
+            toast('Успішний вхід! Доступ відкрито ✨');
+            refreshSettings();
+          } else if (st.status === 'denied') {
+            applyAuth(st);
+          }
+        } catch (e) {}
+      }, 1500);
+    } else if (state.status !== 'awaiting' && authPollTimer) {
+      clearInterval(authPollTimer);
+      authPollTimer = null;
+    }
+  }
+}
+
+async function checkAuthGate() {
+  try {
+    const st = await api('/auth/status');
+    applyAuth(st);
+  } catch (e) {
+    applyAuth({ enabled: true, status: 'error', reason: e.message });
+  }
+}
+
+async function startTelegramLogin() {
+  try {
+    renderGate({ status: 'awaiting' });
+    const r = await api('/auth/login', { method: 'POST' });
+    if (r && r.status === 'authorized') {
+      applyAuth(r);
+      return;
+    }
+    toast('Відкриваємо браузер для входу…');
+    if (!authPollTimer) {
+      authPollTimer = setInterval(async () => {
+        try {
+          const st = await api('/auth/status');
+          if (st.status === 'authorized') {
+            applyAuth(st);
+            toast('Успішний вхід! Доступ відкрито ✨');
+            refreshSettings();
+          } else if (st.status === 'denied') {
+            applyAuth(st);
+          }
+        } catch (e) {}
+      }, 1500);
+    }
+  } catch (e) {
+    toast('Помилка запуску входу: ' + e.message, true);
+    renderGate({ status: 'need_login', reason: e.message });
+  }
+}
+
+async function recheckAuth() {
+  try {
+    renderGate({ status: 'loading' });
+    const st = await api('/auth/recheck', { method: 'POST' });
+    applyAuth(st);
+    if (st.status === 'authorized') {
+      toast('Доступ підтверджено ✓');
+    } else {
+      toast('Членство не підтверджено', true);
+    }
+    refreshSettings();
+  } catch (e) {
+    toast('Помилка перевірки: ' + e.message, true);
+    renderGate({ status: 'error', reason: e.message });
+  }
+}
+
+async function logoutTelegram() {
+  try {
+    if (authPollTimer) {
+      clearInterval(authPollTimer);
+      authPollTimer = null;
+    }
+    await api('/auth/logout', { method: 'POST' });
+    toast('Ви вийшли з акаунта');
+    await checkAuthGate();
+    refreshSettings();
+  } catch (e) {
+    toast('Помилка виходу: ' + e.message, true);
+  }
+}
+
+
+if ($('btnLogout')) $('btnLogout').addEventListener('click', logoutTelegram);
+
+if ($('set-btn-recheck')) $('set-btn-recheck').addEventListener('click', recheckAuth);
+if ($('set-btn-login')) $('set-btn-login').addEventListener('click', startTelegramLogin);
+if ($('set-btn-logout')) $('set-btn-logout').addEventListener('click', logoutTelegram);
+
 // ---------- boot ----------
+checkAuthGate();
 renderOauthButtons();
 updateFoot();
 collectModelOptions().then(() => {

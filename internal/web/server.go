@@ -5,14 +5,18 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"embed"
+	"fmt"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"log"
 	"net/http"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -50,6 +54,14 @@ type App struct {
 	// start failure for the status endpoint.
 	restarting atomic.Bool
 	lastError  string
+	// auth fields
+	authMu        sync.Mutex
+	authStatus    string
+	authReason    string
+	authSession   string
+	authUser      *config.AuthUser
+	loopbackSrv   *http.Server
+	loopbackNonce string
 }
 
 // NewApp builds the app around the config. The embedded service reference is
@@ -263,4 +275,212 @@ func UIHandler() http.Handler {
 // (mounted on the shared Gin engine via gin.WrapH).
 func ControlHandler(a *App) http.Handler {
 	return http.HandlerFunc(a.controlRoot)
+}
+
+// IsAuthenticated reports whether the user is authorized to use CarteLink.
+func (a *App) IsAuthenticated() bool {
+	a.mu.Lock()
+	enabled := a.cfg.Auth.Enabled
+	a.mu.Unlock()
+	if !enabled {
+		return true
+	}
+	a.authMu.Lock()
+	defer a.authMu.Unlock()
+	return a.authStatus == "authorized"
+}
+
+// AuthStatus returns the current Telegram authentication state.
+func (a *App) AuthStatus() (status string, reason string, user *config.AuthUser, brokerUrl string, enabled bool) {
+	a.mu.Lock()
+	enabled = a.cfg.Auth.Enabled
+	brokerUrl = a.cfg.Auth.BrokerURL
+	a.mu.Unlock()
+
+	a.authMu.Lock()
+	defer a.authMu.Unlock()
+	status = a.authStatus
+	reason = a.authReason
+	user = a.authUser
+	return
+}
+
+// SetAuthSession updates in-memory and persisted auth session.
+func (a *App) SetAuthSession(session string, user *config.AuthUser) {
+	a.authMu.Lock()
+	a.authSession = session
+	a.authUser = user
+	a.authStatus = "authorized"
+	a.authReason = ""
+	a.authMu.Unlock()
+
+	a.mu.Lock()
+	a.cfg.Auth.Session = session
+	a.cfg.Auth.User = user
+	_ = a.cfg.Save()
+	a.mu.Unlock()
+}
+
+// InitAuth initializes auth state on startup.
+func (a *App) InitAuth() {
+	a.mu.Lock()
+	cfg := a.cfg
+	a.mu.Unlock()
+
+	if !cfg.Auth.Enabled {
+		a.authMu.Lock()
+		a.authStatus = "authorized"
+		a.authMu.Unlock()
+		return
+	}
+
+	if cfg.Auth.Session == "" {
+		a.authMu.Lock()
+		a.authStatus = "need_login"
+		a.authMu.Unlock()
+		return
+	}
+
+	a.authMu.Lock()
+	a.authSession = cfg.Auth.Session
+	a.authUser = cfg.Auth.User
+	a.authStatus = "authorized"
+	a.authMu.Unlock()
+
+	// Asynchronously verify live membership
+	go func() {
+		a.VerifyAuthLive()
+	}()
+}
+
+// VerifyAuthLive verifies membership with the hosted broker.
+func (a *App) VerifyAuthLive() bool {
+	a.mu.Lock()
+	brokerUrl := a.cfg.Auth.BrokerURL
+	if brokerUrl == "" {
+		brokerUrl = config.DefaultBrokerURL
+	}
+	enabled := a.cfg.Auth.Enabled
+	a.mu.Unlock()
+
+	if !enabled {
+		a.authMu.Lock()
+		a.authStatus = "authorized"
+		a.authMu.Unlock()
+		return true
+	}
+
+	a.authMu.Lock()
+	session := a.authSession
+	a.authMu.Unlock()
+
+	if session == "" {
+		a.authMu.Lock()
+		a.authStatus = "need_login"
+		a.authMu.Unlock()
+		return false
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	payload, _ := json.Marshal(map[string]any{
+		"initData": "",
+		"app":      true,
+		"session":  session,
+	})
+	verifyURL := strings.TrimRight(brokerUrl, "/") + "/api/auth/verify"
+
+	req, err := http.NewRequest(http.MethodPost, verifyURL, bytes.NewReader(payload))
+	if err != nil {
+		return true
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cookie", "ytc_session="+session)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Println("[CarteLink auth] verify network blip:", err)
+		return true
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		OK     bool   `json:"ok"`
+		Reason string `json:"reason"`
+		Tier   string `json:"tier"`
+		User   *struct {
+			ID        any    `json:"id"`
+			FirstName string `json:"first_name"`
+			LastName  string `json:"last_name"`
+			Name      string `json:"name"`
+			Username  string `json:"username"`
+		} `json:"user"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Println("[CarteLink auth] decode verify error:", err)
+		return true
+	}
+
+	a.authMu.Lock()
+	defer a.authMu.Unlock()
+	if result.OK {
+		a.authStatus = "authorized"
+		a.authReason = ""
+		if result.User != nil {
+			displayName := result.User.FirstName
+			if result.User.LastName != "" {
+				displayName += " " + result.User.LastName
+			} else if displayName == "" {
+				displayName = result.User.Name
+			}
+			userObj := &config.AuthUser{
+				ID:       "",
+				Name:     displayName,
+				Username: result.User.Username,
+			}
+			if result.User.ID != nil {
+				userObj.ID = strings.TrimSpace(bytes.NewBufferString("").String() + anyToString(result.User.ID))
+			}
+			a.authUser = userObj
+			a.mu.Lock()
+			a.cfg.Auth.User = userObj
+			_ = a.cfg.Save()
+			a.mu.Unlock()
+		}
+		return true
+	}
+
+	if result.Reason == "not_member" || result.Reason == "trial_expired" {
+		a.authStatus = "denied"
+		a.authReason = "not_member"
+		log.Println("[CarteLink auth] access revoked: user is not a member of Secret YT_cartel 🧠")
+		return false
+	}
+
+	a.authStatus = "need_login"
+	a.authReason = result.Reason
+	return false
+}
+
+// StartAuthWatchdog runs a 5-minute background live membership re-check.
+func (a *App) StartAuthWatchdog() {
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			a.mu.Lock()
+			enabled := a.cfg.Auth.Enabled
+			a.mu.Unlock()
+			if enabled {
+				a.VerifyAuthLive()
+			}
+		}
+	}()
+}
+
+
+func anyToString(v any) string {
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprint(v)
 }

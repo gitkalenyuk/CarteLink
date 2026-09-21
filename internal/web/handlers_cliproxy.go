@@ -38,6 +38,10 @@ const mgmtTimeout = 20 * time.Second
 // mgmtRequest performs an authenticated management API call against the
 // embedded engine on 127.0.0.1:<port>.
 func (a *App) mgmtRequest(method, path string, body []byte) (int, []byte, string) {
+	if a.Paused() || !a.EngineRunning() {
+		errJSON := []byte(`{"ok":false,"error":"Рушій зупинено. Натисніть кнопку 'Запустити' вгорі панелі."}`)
+		return http.StatusServiceUnavailable, errJSON, "application/json"
+	}
 	cfg := a.snapshotConfig()
 	full := fmt.Sprintf("http://%s%s", net.JoinHostPort(config.DisplayHost(cfg.Cliproxy.Host), strconv.Itoa(cfg.Cliproxy.Port)), path)
 	var rdr io.Reader
@@ -46,7 +50,8 @@ func (a *App) mgmtRequest(method, path string, body []byte) (int, []byte, string
 	}
 	req, err := http.NewRequest(method, full, rdr)
 	if err != nil {
-		return 0, nil, err.Error()
+		errJSON := []byte(fmt.Sprintf(`{"ok":false,"error":%q}`, err.Error()))
+		return http.StatusInternalServerError, errJSON, "application/json"
 	}
 	req.Header.Set("X-Management-Key", cfg.Cliproxy.ManagementSecret)
 	req.Header.Set("Accept", "application/json, application/yaml, text/plain, */*")
@@ -56,17 +61,28 @@ func (a *App) mgmtRequest(method, path string, body []byte) (int, []byte, string
 	client := &http.Client{Timeout: mgmtTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, nil, err.Error()
+		errJSON := []byte(fmt.Sprintf(`{"ok":false,"error":"Помилка звʼязку з рушієм: %s"}`, err.Error()))
+		return http.StatusBadGateway, errJSON, "application/json"
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
-	return resp.StatusCode, raw, resp.Header.Get("Content-Type")
+	ctype := resp.Header.Get("Content-Type")
+	if ctype == "" {
+		ctype = "application/json"
+	}
+	return resp.StatusCode, raw, ctype
 }
 
 // writeMgmtResult forwards a management response to the UI caller.
 func writeMgmtResult(w http.ResponseWriter, status int, raw []byte, ctype string) {
+	if status <= 0 {
+		status = http.StatusBadGateway
+	}
 	if ctype == "" {
 		ctype = "application/json"
+	}
+	if len(raw) == 0 {
+		raw = []byte(`{"ok":false,"error":"Порожня відповідь від сервера"}`)
 	}
 	w.Header().Set("Content-Type", ctype)
 	w.WriteHeader(status)
@@ -111,13 +127,21 @@ func (a *App) apiClipOauthStart(w http.ResponseWriter, r *http.Request) {
 	status, raw, _ := a.mgmtRequest(http.MethodGet, path, nil)
 	if status >= 200 && status < 300 {
 		var parsed struct {
-			URL string `json:"url"`
+			URL   string `json:"url"`
+			Error string `json:"error"`
 		}
 		if json.Unmarshal(raw, &parsed) == nil && parsed.URL != "" {
 			cmd := openCleanBrowser(parsed.URL)
 			if cmd != nil {
 				a.SetOAuthBrowserCmd(cmd)
 			}
+		} else if parsed.URL == "" {
+			errText := parsed.Error
+			if errText == "" {
+				errText = "Не вдалося згенерувати посилання для входу"
+			}
+			jsonWrite(w, http.StatusBadRequest, anyMap{"ok": false, "error": errText})
+			return
 		}
 	}
 	writeMgmtResult(w, status, raw, "application/json")

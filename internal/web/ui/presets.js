@@ -1,5 +1,5 @@
 'use strict';
-// CartelGate — provider presets for the Providers page.
+// CarteLink — provider presets for the Providers page.
 // Every entry is an OpenAI-compatible endpoint (POST <url>/chat/completions,
 // GET <url>/models). `models` is a starting list only — the "Підтягнути
 // моделі" button pulls the live list from the provider. `keyUrl` is where the

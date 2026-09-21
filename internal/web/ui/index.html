@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CartelGate</title>
+<title>CarteLink</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,10 +14,17 @@
         <svg viewBox="0 0 32 32" width="22" height="22"><path d="M6 26V12a10 10 0 0 1 20 0v14" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/><path d="M12 26V15M20 26V15" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/><path d="M3 26h26" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg>
       </div>
       <div class="brand-text">
-        <div class="brand-name">Cartel<span>Gate</span></div>
+        <div class="brand-name">Carte<span>Link</span></div>
         <div class="brand-by">by YouTube Cartel</div>
         <span id="tbStatus" class="tb-pill off"><i class="dot"></i><span id="tbStatusText">зупинено</span></span>
       </div>
+    </div>
+    <div id="userBox" class="userbox" style="display:none">
+      <div class="user-info">
+        <span class="u-icon">👤</span>
+        <span id="userName" class="u-name"></span>
+      </div>
+      <button id="btnLogout" class="btn btn-mini btn-ghost" title="Вийти з акаунта Telegram">Вийти</button>
     </div>
     <nav id="nav">
       <button data-page="server" class="active"><span class="ic">◉</span> Сервер</button>
@@ -29,7 +36,7 @@
       <button data-page="about"><span class="ic">ℹ</span> Про програму</button>
     </nav>
     <div class="sidebar-foot">
-      <div class="ver" id="sidebar-version">v2.0.0</div>
+      <div class="ver" id="sidebar-version">v2.1.0</div>
     </div>
   </aside>
 
@@ -389,6 +396,28 @@
       </div>
 
       <div class="card">
+        <div class="card-title">🔐 Авторизація Telegram (Secret YT_cartel 🧠)</div>
+        <p class="hint" style="margin:0 0 12px">Доступ до функцій та проксі-шлюзу CarteLink надається виключно учасникам спільноти Secret YT_cartel 🧠.</p>
+        <div class="grid two">
+          <div>
+            <label>Статус доступу</label>
+            <div id="set-auth-status" class="mono small" style="padding:8px 0;font-weight:700">Перевірка…</div>
+          </div>
+          <div>
+            <label>Авторизований користувач</label>
+            <div id="set-auth-user" class="small" style="padding:8px 0">—</div>
+          </div>
+        </div>
+        <div class="actions" style="margin-top:12px;display:flex;gap:10px;align-items:center">
+          <button id="set-btn-recheck" class="btn btn-sm btn-ghost">↻ Перевірити членство зараз</button>
+          <button id="set-btn-login" class="btn btn-sm btn-accent" style="display:none">Увійти через Telegram</button>
+          <button id="set-btn-logout" class="btn btn-sm btn-danger" style="display:none">Вийти з акаунта</button>
+        </div>
+      </div>
+
+
+
+      <div class="card">
         <div class="card-title">Додатково: свій config.yaml <span class="hint">для досвідчених</span></div>
         <textarea id="set-extra" rows="8" class="mono full" placeholder="# raw YAML appended to the generated engine config"></textarea>
         <button id="set-extra-save" class="btn">Зберегти YAML</button>
@@ -605,6 +634,23 @@ export ANTHROPIC_MODEL="gemini-3.8-flash-high"</pre>
     </section>
   </main>
 </div>
+
+<!-- ================= TELEGRAM ACCESS GATE ================= -->
+<div id="gate" class="gate">
+  <div class="gate-card">
+    <div class="gate-logo">
+      <svg viewBox="0 0 32 32" width="36" height="36"><path d="M6 26V12a10 10 0 0 1 20 0v14" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/><path d="M12 26V15M20 26V15" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/><path d="M3 26h26" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg>
+    </div>
+    <div id="gateBody">
+      <div class="gate-spin"></div>
+      <h1>Перевіряємо доступ…</h1>
+      <p>Підтверджуємо членство у спільноті Secret YT_cartel 🧠</p>
+    </div>
+  </div>
+  <div class="gate-foot">Secret YT_cartel 🧠 · CarteLink · вхід через Telegram</div>
+</div>
+
+
 
 <div id="toast" class="toast hidden"></div>
 <script src="presets.js"></script>

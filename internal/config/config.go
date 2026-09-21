@@ -16,20 +16,35 @@ import (
 )
 
 // Version is the app version reported in /health and the UI.
-const Version = "2.0.0"
+const Version = "2.1.0"
 
 // AppName is the product name used in window titles, logs and messages.
-const AppName = "CartelGate"
+const AppName = "CarteLink"
 
 // KeyPrefix / SecretPrefix mark generated client keys and management secrets.
 const (
-	KeyPrefix    = "cg-"
-	SecretPrefix = "cg-mgmt-"
+	KeyPrefix    = "cl-"
+	SecretPrefix = "cl-mgmt-"
 )
 
 // legacyHomeName is the data directory of the previous product name; it is
 // copied over on first start so existing accounts and settings survive.
-const legacyHomeName = "VisionGateGo"
+var legacyHomeNames = []string{"CartelGate", "VisionGateGo"}
+
+const DefaultBrokerURL = "https://yt-cartel.vercel.app"
+
+type AuthUser struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Username string `json:"username,omitempty"`
+}
+
+type AuthConfig struct {
+	Enabled   bool      `json:"enabled"`
+	BrokerURL string    `json:"brokerUrl"`
+	Session   string    `json:"session,omitempty"`
+	User      *AuthUser `json:"user,omitempty"`
+}
 
 // Routing holds the model-mapping rules applied by the gateway middleware.
 type Routing struct {
@@ -69,6 +84,7 @@ type Provider struct {
 type Config struct {
 	APIKey         string     `json:"apiKey"`
 	RequireKey     bool       `json:"requireKey"`
+	Auth           AuthConfig `json:"auth"`
 	Providers      []Provider `json:"providers"`
 	Routing        Routing    `json:"routing"`
 	Cliproxy       Cliproxy   `json:"cliproxy"`
@@ -82,6 +98,9 @@ type Config struct {
 // executable, portable mode is auto-selected so everything stays self-contained.
 // On first start the previous product's data directory is copied over.
 func Home() string {
+	if h := strings.TrimSpace(os.Getenv("CARTELINK_HOME")); h != "" {
+		return h
+	}
 	if h := strings.TrimSpace(os.Getenv("CARTELGATE_HOME")); h != "" {
 		return h
 	}
@@ -102,7 +121,9 @@ func Home() string {
 		base = "."
 	}
 	home := filepath.Join(base, AppName)
-	migrateLegacyHome(filepath.Join(base, legacyHomeName), home)
+	for _, leg := range legacyHomeNames {
+		migrateLegacyHome(filepath.Join(base, leg), home)
+	}
 	return home
 }
 
@@ -227,6 +248,10 @@ func (c *Config) Save() error {
 func Defaults() *Config {
 	c := &Config{
 		RequireKey:     true,
+		Auth: AuthConfig{
+			Enabled:   true,
+			BrokerURL: DefaultBrokerURL,
+		},
 		Providers:      []Provider{},
 		ModelBlacklist: []string{},
 	}
@@ -244,6 +269,10 @@ func Normalize(c *Config) {
 	if c.APIKey == "" {
 		c.APIKey = NewKey()
 	}
+	if c.Auth.BrokerURL == "" {
+		c.Auth.BrokerURL = DefaultBrokerURL
+	}
+	c.Auth.BrokerURL = strings.TrimRight(strings.TrimSpace(c.Auth.BrokerURL), "/")
 	if c.Routing.ModelMap == nil {
 		c.Routing.ModelMap = map[string]string{}
 	}

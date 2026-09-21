@@ -60,11 +60,19 @@ func main() {
 		cfg.Cliproxy.Port = *portOverride
 	}
 	app := web.NewApp(cfg)
+	app.InitAuth()
+	app.StartAuthWatchdog()
 
 	// Redirect stdout/stderr into a log file when there is no console
 	// (the -H=windowsgui build). gin writers are re-pointed too — the engine
 	// is constructed later, inside Start().
 	useGUI := runtime.GOOS == "windows" && !*headless && desktop.Supported()
+	if useGUI {
+		// Detach and hide any console window immediately
+		kernel32 := syscall.NewLazyDLL("kernel32.dll")
+		freeConsole := kernel32.NewProc("FreeConsole")
+		_, _, _ = freeConsole.Call()
+	}
 	if useGUI {
 		_ = os.MkdirAll(config.CliproxyLogsDir(), 0o755)
 		logPath := filepath.Join(config.CliproxyLogsDir(), "app.log")
@@ -152,11 +160,20 @@ func main() {
 		isPanel := p == "/ui/" || strings.HasPrefix(p, "/ui/") ||
 			strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/v0/management/") ||
 			p == "/management.html" || p == "/healthz"
+		if !isPanel && !app.IsAuthenticated() {
+			c.AbortWithStatusJSON(403, gin.H{
+				"error": gin.H{
+					"type":    "not_authenticated",
+					"message": "CarteLink: потрібна авторизація через Telegram (Secret YT_cartel 🧠). Увійдіть у застосунку.",
+				},
+			})
+			return
+		}
 		if !isPanel && app.Paused() {
 			c.AbortWithStatusJSON(503, gin.H{
 				"error": gin.H{
 					"type":    "paused",
-					"message": "CartelGate is stopped — press Start in the app.",
+					"message": "CarteLink is stopped — press Start in the app.",
 				},
 			})
 			return
@@ -238,7 +255,7 @@ func main() {
 	if configWarning != "" {
 		log.Println(configWarning)
 		if useGUI {
-			desktop.Alert("CartelGate", configWarning)
+			desktop.Alert("CarteLink", configWarning)
 		} else {
 			fmt.Fprintln(os.Stderr, configWarning)
 		}
@@ -247,10 +264,10 @@ func main() {
 	if useGUI {
 		// The desktop app: one window, opened automatically. Closing the
 		// window quits the app.
-		err := desktop.RunMainWindow(uiURL, "CartelGate", config.DataDir())
+		err := desktop.RunMainWindow(uiURL, "CarteLink", config.DataDir())
 		if err != nil && err != desktop.ErrClosed {
 			log.Println("window creation failed, falling back to browser:", err)
-			desktop.Alert("CartelGate", "Microsoft Edge WebView2 runtime не знайдено на цьому комп'ютері.\n\nCartelGate відкриється у вашому стандартному браузері.")
+			desktop.Alert("CarteLink", "Microsoft Edge WebView2 runtime не знайдено на цьому комп'ютері.\n\nCarteLink відкриється у вашому стандартному браузері.")
 			useGUI = false
 		} else {
 			shuttingDown.Store(true)
@@ -262,7 +279,7 @@ func main() {
 
 	// Console mode (non-Windows, or --headless): print the map and open the
 	// default browser unless headless was requested.
-	fmt.Println("CartelGate — one server, one port (CLIProxyAPI embedded + CartelGate UI)")
+	fmt.Println("CarteLink — one server, one port (CLIProxyAPI embedded + CarteLink UI)")
 	fmt.Println("  UI:         " + uiURL)
 	fmt.Println("  OpenAI API: " + base + "/v1/chat/completions")
 	fmt.Println("  Anthropic:  " + base + "/v1/messages")

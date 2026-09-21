@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CartelGate — macOS setup: dependencies, build, vet, tests.
+# CarteLink — macOS setup: dependencies, build, vet, tests.
 # Usage: bash scripts/mac-setup.sh [--run]
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -17,7 +17,7 @@ need git  || brew install git
 echo "== go version"; go version
 
 echo "== build"
-CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o cartelgate .
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o cartelink .
 
 echo "== vet"
 go vet . ./internal/...
@@ -30,7 +30,7 @@ node --check internal/web/ui/app.js
 node --check internal/web/ui/presets.js
 
 echo
-echo "Готово: ./cartelgate  (UI: http://127.0.0.1:8317/ui/, дані: ~/Library/Application Support/CartelGate)"
+echo "Готово: ./cartelink  (UI: http://127.0.0.1:8317/ui/, дані: ~/Library/Application Support/CarteLink)"
 if [[ "${1:-}" == "--run" ]]; then
-  exec ./cartelgate
+  exec ./cartelink
 fi

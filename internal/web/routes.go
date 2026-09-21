@@ -15,6 +15,14 @@ func (a *App) control(w http.ResponseWriter, r *http.Request, path string) {
 	switch {
 	case path == "/status" && r.Method == http.MethodGet:
 		a.apiStatus(w, r)
+	case path == "/auth/status" && r.Method == http.MethodGet:
+		a.apiAuthStatus(w, r)
+	case path == "/auth/login" && r.Method == http.MethodPost:
+		a.apiAuthLogin(w, r)
+	case path == "/auth/logout" && r.Method == http.MethodPost:
+		a.apiAuthLogout(w, r)
+	case path == "/auth/recheck" && r.Method == http.MethodPost:
+		a.apiAuthRecheck(w, r)
 	case path == "/endpoints" && r.Method == http.MethodGet:
 		a.apiEndpoints(w, r)
 	case path == "/config" && r.Method == http.MethodGet:
