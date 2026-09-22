@@ -52,10 +52,27 @@ type Routing struct {
 	DefaultModel      string            `json:"defaultModel"`
 	ModelMap          map[string]string `json:"modelMap"`
 	Tiers             struct {
+		// Claude Code tiers
 		Haiku  string `json:"haiku"`
 		Sonnet string `json:"sonnet"`
 		Opus   string `json:"opus"`
+
+		// Cursor tiers
+		CursorSmall   string `json:"cursorSmall,omitempty"`
+		CursorSonnet  string `json:"cursorSonnet,omitempty"`
+		CursorPrimary string `json:"cursorPrimary,omitempty"`
+
+		// Codex tiers
+		CodexMini   string `json:"codexMini,omitempty"`
+		CodexSmart  string `json:"codexSmart,omitempty"`
+		CodexReason string `json:"codexReason,omitempty"`
+
+		// Windsurf tiers
+		WindsurfFast string `json:"windsurfFast,omitempty"`
+		WindsurfBase string `json:"windsurfBase,omitempty"`
+		WindsurfAdv  string `json:"windsurfAdv,omitempty"`
 	} `json:"tiers"`
+	UnmappedStrategy string `json:"unmappedStrategy,omitempty"` // "default" or "passthrough"
 }
 
 // Cliproxy is the embedded-engine section: where it listens and its keys.
@@ -256,6 +273,7 @@ func Defaults() *Config {
 		ModelBlacklist: []string{},
 	}
 	c.Routing.ModelMap = map[string]string{}
+	c.Routing.UnmappedStrategy = "default"
 	c.Cliproxy = Cliproxy{Port: 8317, Host: "127.0.0.1", APIKeys: []string{}}
 	return c
 }
@@ -275,6 +293,9 @@ func Normalize(c *Config) {
 	c.Auth.BrokerURL = strings.TrimRight(strings.TrimSpace(c.Auth.BrokerURL), "/")
 	if c.Routing.ModelMap == nil {
 		c.Routing.ModelMap = map[string]string{}
+	}
+	if c.Routing.UnmappedStrategy == "" {
+		c.Routing.UnmappedStrategy = "default"
 	}
 	norm := make([]Provider, 0, len(c.Providers))
 	for _, p := range c.Providers {

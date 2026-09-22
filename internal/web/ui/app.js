@@ -32,6 +32,8 @@ async function copyVal(text, label) {
 }
 
 // ---------- navigation ----------
+let metricsPollTimer = null;
+
 function showPage(name) {
   document.querySelectorAll('nav button').forEach((b) => {
     b.classList.toggle('active', b.dataset.page === name);
@@ -39,11 +41,22 @@ function showPage(name) {
   document.querySelectorAll('.page').forEach((p) => {
     p.classList.toggle('active', p.id === 'page-' + name);
   });
+
+  if (metricsPollTimer && name !== 'metrics') {
+    clearInterval(metricsPollTimer);
+    metricsPollTimer = null;
+  }
+
   if (name === 'server') refreshServer();
   if (name === 'providers') refreshProviders();
   if (name === 'models') refreshModels();
   if (name === 'cliproxy') refreshCliproxy();
-  if (name === 'metrics') refreshMetrics();
+  if (name === 'metrics') {
+    refreshMetrics();
+    if (!metricsPollTimer) {
+      metricsPollTimer = setInterval(refreshMetrics, 3000);
+    }
+  }
   if (name === 'settings') refreshSettings();
   if (name === 'about') {
     const mainEl = document.querySelector('main');
@@ -382,9 +395,22 @@ function updateFoot() {
 
 // ---------- models page ----------
 const TIERS = [
-  { key: 'haiku', alias: 'claude-haiku-4-5', sel: 'tierHaiku' },
-  { key: 'sonnet', alias: 'claude-sonnet-4-6', sel: 'tierSonnet' },
-  { key: 'opus', alias: 'claude-opus-4-8', sel: 'tierOpus' },
+  // Claude Code
+  { key: 'haiku', alias: 'claude-haiku-4-5', sel: 'tierHaiku', client: 'claude' },
+  { key: 'sonnet', alias: 'claude-sonnet-4-6', sel: 'tierSonnet', client: 'claude' },
+  { key: 'opus', alias: 'claude-opus-4-8', sel: 'tierOpus', client: 'claude' },
+  // Cursor
+  { key: 'cursorSmall', alias: 'cursor-small', sel: 'tierCursorSmall', client: 'cursor' },
+  { key: 'cursorSonnet', alias: 'claude-3-5-sonnet', sel: 'tierCursorSonnet', client: 'cursor' },
+  { key: 'cursorPrimary', alias: 'cursor-primary', sel: 'tierCursorPrimary', client: 'cursor' },
+  // Codex
+  { key: 'codexMini', alias: 'gpt-4o-mini', sel: 'tierCodexMini', client: 'codex' },
+  { key: 'codexSmart', alias: 'gpt-4o', sel: 'tierCodexSmart', client: 'codex' },
+  { key: 'codexReason', alias: 'o1', sel: 'tierCodexReason', client: 'codex' },
+  // Windsurf
+  { key: 'windsurfFast', alias: 'cascade-fast', sel: 'tierWindsurfFast', client: 'windsurf' },
+  { key: 'windsurfBase', alias: 'cascade-base', sel: 'tierWindsurfBase', client: 'windsurf' },
+  { key: 'windsurfAdv', alias: 'cascade-advanced', sel: 'tierWindsurfAdv', client: 'windsurf' },
 ];
 
 const PROVIDER_KNOWN_MODELS = {
@@ -605,14 +631,21 @@ function fillTiers(routing) {
   const tiers = (routing && routing.tiers) || {};
   for (const t of TIERS) {
     const sel = $(t.sel);
+    if (!sel) continue;
     const cur = tiers[t.key] || '';
     populateModelSelect(sel, cur, '— не вказано —');
+  }
+  if ($('unmappedStrategySelect')) {
+    let strat = (routing && routing.unmappedStrategy) || 'passthrough';
+    if (strat === 'fallback') strat = 'default';
+    $('unmappedStrategySelect').value = strat;
   }
   renderAliases(routing);
 }
 
 function renderAliases(routing) {
   const box = $('aliasList');
+  if (!box) return;
   const tiers = (routing && routing.tiers) || {};
   const fallback = routing && routing.defaultModel ? routing.defaultModel : '';
   box.innerHTML = '';
@@ -620,7 +653,8 @@ function renderAliases(routing) {
     const target = cleanModelName(tiers[t.key] || fallback);
     const row = document.createElement('div');
     row.className = 'alias-item';
-    row.innerHTML = '<span class="tier-badge ' + t.key + '">' + t.key + '</span>' +
+    const badgeClass = t.client ? ('tier-badge ' + t.client) : ('tier-badge ' + t.key);
+    row.innerHTML = '<span class="' + badgeClass + '">' + esc(t.alias) + '</span>' +
       '<span class="alias-id" data-copy-text="' + esc(t.alias) + '" title="Клікни, щоб скопіювати">' + esc(t.alias) + '</span>' +
       '<span class="alias-arrow">→</span>' +
       '<span class="alias-target ' + (target ? '' : 'unset') + '">' + esc(target || 'не призначено') + '</span>';
@@ -631,15 +665,39 @@ function renderAliases(routing) {
   });
 }
 
+// Client tab switcher
+document.querySelectorAll('.client-tab').forEach((tab) => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.client-tab').forEach((t) => t.classList.remove('active'));
+    tab.classList.add('active');
+    const target = tab.dataset.client;
+    document.querySelectorAll('.client-tiers-group').forEach((grp) => {
+      grp.style.display = grp.id === 'tiers-group-' + target ? 'block' : 'none';
+    });
+  });
+});
+
 $('btnSaveTiers').addEventListener('click', async () => {
   try {
     const cfg = await api('/config');
     cfg.routing = cfg.routing || {};
     cfg.routing.tiers = {
-      haiku: cleanModelName($('tierHaiku').value),
-      sonnet: cleanModelName($('tierSonnet').value),
-      opus: cleanModelName($('tierOpus').value),
+      haiku: cleanModelName($('tierHaiku') ? $('tierHaiku').value : ''),
+      sonnet: cleanModelName($('tierSonnet') ? $('tierSonnet').value : ''),
+      opus: cleanModelName($('tierOpus') ? $('tierOpus').value : ''),
+      cursorSmall: cleanModelName($('tierCursorSmall') ? $('tierCursorSmall').value : ''),
+      cursorSonnet: cleanModelName($('tierCursorSonnet') ? $('tierCursorSonnet').value : ''),
+      cursorPrimary: cleanModelName($('tierCursorPrimary') ? $('tierCursorPrimary').value : ''),
+      codexMini: cleanModelName($('tierCodexMini') ? $('tierCodexMini').value : ''),
+      codexSmart: cleanModelName($('tierCodexSmart') ? $('tierCodexSmart').value : ''),
+      codexReason: cleanModelName($('tierCodexReason') ? $('tierCodexReason').value : ''),
+      windsurfFast: cleanModelName($('tierWindsurfFast') ? $('tierWindsurfFast').value : ''),
+      windsurfBase: cleanModelName($('tierWindsurfBase') ? $('tierWindsurfBase').value : ''),
+      windsurfAdv: cleanModelName($('tierWindsurfAdv') ? $('tierWindsurfAdv').value : ''),
     };
+    if ($('unmappedStrategySelect')) {
+      cfg.routing.unmappedStrategy = $('unmappedStrategySelect').value;
+    }
     await fetch('/api/config', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -1611,16 +1669,31 @@ function parseUsageRecord(item) {
 
 async function refreshMetrics() {
   let authFiles = [];
-  try {
-    const afResp = await mgmt('GET', 'auth-files');
-    authFiles = Array.isArray(afResp) ? afResp : ((afResp && afResp.files) || []);
-  } catch (e) { /* ignore */ }
+  let serverMetrics = null;
 
+  // Attempt to fetch persistent aggregated metrics from CarteLink backend
+  try {
+    const res = await api('/metrics');
+    if (res && res.ok) {
+      if (res.metrics) serverMetrics = res.metrics;
+      if (res.auth_files) {
+        authFiles = Array.isArray(res.auth_files) ? res.auth_files : ((res.auth_files && res.auth_files.files) || []);
+      }
+    }
+  } catch (e) { /* fallback to direct engine polling */ }
+
+  if (!authFiles.length) {
+    try {
+      const afResp = await mgmt('GET', 'auth-files');
+      authFiles = Array.isArray(afResp) ? afResp : ((afResp && afResp.files) || []);
+    } catch (e) { /* ignore */ }
+  }
+
+  // Also drain usage-queue into local usageHistory
   try {
     const queue = await mgmt('GET', 'usage-queue?count=100');
     if (Array.isArray(queue) && queue.length > 0) {
       const fresh = queue.map(parseUsageRecord).filter(Boolean);
-      // Newest first; the queue itself is oldest-first.
       fresh.reverse();
       usageHistory = fresh.concat(usageHistory).slice(0, 500);
       saveUsageHistory();
@@ -1628,41 +1701,57 @@ async function refreshMetrics() {
   } catch (e) { /* ignore */ }
 
   let totalInput = 0, totalOutput = 0, totalCached = 0, totalReasoning = 0, totalTokens = 0;
-  const modelStats = {};
+  let totalRequests = 0, totalSuccess = 0, totalFailed = 0;
+  let modelStats = {};
+  let recentRequests = [];
 
-  for (const r of usageHistory) {
-    const tok = r.tokens || {};
-    const inp = Number(tok.input_tokens || 0);
-    const out = Number(tok.output_tokens || 0);
-    const cac = Number(tok.cached_tokens || tok.cache_read_tokens || 0);
-    const rea = Number(tok.reasoning_tokens || 0);
-    const tot = Number(tok.total_tokens || (inp + out));
+  if (serverMetrics) {
+    totalInput = Number(serverMetrics.total_input || 0);
+    totalOutput = Number(serverMetrics.total_output || 0);
+    totalCached = Number(serverMetrics.total_cached || 0);
+    totalReasoning = Number(serverMetrics.total_reasoning || 0);
+    totalTokens = Number(serverMetrics.total_tokens || (totalInput + totalOutput));
+    totalRequests = Number(serverMetrics.total_requests || 0);
+    totalSuccess = Number(serverMetrics.total_success || 0);
+    totalFailed = Number(serverMetrics.total_failed || 0);
+    modelStats = serverMetrics.model_stats || {};
+    recentRequests = serverMetrics.history || usageHistory;
+  } else {
+    for (const r of usageHistory) {
+      const tok = r.tokens || {};
+      const inp = Number(tok.input_tokens || 0);
+      const out = Number(tok.output_tokens || 0);
+      const cac = Number(tok.cached_tokens || tok.cache_read_tokens || 0);
+      const rea = Number(tok.reasoning_tokens || 0);
+      const tot = Number(tok.total_tokens || (inp + out));
 
-    totalInput += inp;
-    totalOutput += out;
-    totalCached += cac;
-    totalReasoning += rea;
-    totalTokens += tot;
+      totalInput += inp;
+      totalOutput += out;
+      totalCached += cac;
+      totalReasoning += rea;
+      totalTokens += tot;
 
-    const mName = r.model || 'unknown';
-    if (!modelStats[mName]) {
-      modelStats[mName] = { requests: 0, input: 0, output: 0, cached: 0, reasoning: 0, total: 0, failed: 0 };
+      const mName = r.model || 'unknown';
+      if (!modelStats[mName]) {
+        modelStats[mName] = { requests: 0, input: 0, output: 0, cached: 0, reasoning: 0, total: 0, failed: 0 };
+      }
+      modelStats[mName].requests++;
+      modelStats[mName].input += inp;
+      modelStats[mName].output += out;
+      modelStats[mName].cached += cac;
+      modelStats[mName].reasoning += rea;
+      modelStats[mName].total += tot;
+      if (r.failed) modelStats[mName].failed++;
     }
-    modelStats[mName].requests++;
-    modelStats[mName].input += inp;
-    modelStats[mName].output += out;
-    modelStats[mName].cached += cac;
-    modelStats[mName].reasoning += rea;
-    modelStats[mName].total += tot;
-    if (r.failed) modelStats[mName].failed++;
+
+    for (const f of authFiles) {
+      totalSuccess += Number(f.success || 0);
+      totalFailed += Number(f.failed || 0);
+    }
+    totalRequests = totalSuccess + totalFailed;
+    recentRequests = usageHistory;
   }
 
-  let totalSuccess = 0, totalFailed = 0;
-  for (const f of authFiles) {
-    totalSuccess += Number(f.success || 0);
-    totalFailed += Number(f.failed || 0);
-  }
-  const totalRequests = totalSuccess + totalFailed;
   const successRate = totalRequests > 0 ? Math.round((totalSuccess / totalRequests) * 100) : 100;
 
   function fmtNum(n) {
@@ -1682,7 +1771,7 @@ async function refreshMetrics() {
 
   renderAccountsQuotaTable(authFiles);
   renderModelsUsageTable(modelStats);
-  renderRecentRequestsTable(usageHistory.slice(0, 30));
+  renderRecentRequestsTable(recentRequests.slice(0, 50));
 }
 
 function renderAccountsQuotaTable(authFiles) {
@@ -1829,6 +1918,41 @@ function renderRecentRequestsTable(records) {
 }
 
 $('usage-refresh').addEventListener('click', refreshMetrics);
+
+if ($('btnMetricsClear')) {
+  $('btnMetricsClear').addEventListener('click', async () => {
+    if (!confirm('Ви дійсно бажаєте скинути всю збережену статистику токенів та чергу запитів?')) return;
+    try {
+      await api('/metrics/clear', { method: 'POST' });
+      usageHistory = [];
+      saveUsageHistory();
+      await refreshMetrics();
+      toast('Статистику успішно очищено ✓');
+    } catch (e) {
+      toast('Не вдалося очистити статистику: ' + e.message, true);
+    }
+  });
+}
+
+if ($('btnMetricsExport')) {
+  $('btnMetricsExport').addEventListener('click', async () => {
+    try {
+      const data = await api('/metrics');
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'cartelink-metrics-' + new Date().toISOString().slice(0, 10) + '.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast('Статистику експортовано в JSON ✓');
+    } catch (e) {
+      toast('Помилка експорту: ' + e.message, true);
+    }
+  });
+}
 
 // ---------- settings page ----------
 async function refreshSettings() {
@@ -2182,8 +2306,17 @@ function renderUserBox(user) {
     box.style.display = 'none';
     return;
   }
-  const name = user.name || (user.username ? '@' + user.username : 'Учасник');
-  if ($('userName')) $('userName').textContent = name;
+  const uEl = $('userName');
+  if (uEl) {
+    if (user.username) {
+      const cleanUname = user.username.replace(/^@/, '');
+      uEl.innerHTML = '<a href="https://t.me/' + esc(cleanUname) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent-2);text-decoration:none;font-weight:600">@' + esc(cleanUname) + '</a>';
+    } else if (user.name) {
+      uEl.textContent = user.name;
+    } else {
+      uEl.textContent = 'Учасник';
+    }
+  }
   box.style.display = 'flex';
 }
 
@@ -2345,6 +2478,7 @@ if ($('btnLogout')) $('btnLogout').addEventListener('click', logoutTelegram);
 if ($('set-btn-recheck')) $('set-btn-recheck').addEventListener('click', recheckAuth);
 if ($('set-btn-login')) $('set-btn-login').addEventListener('click', startTelegramLogin);
 if ($('set-btn-logout')) $('set-btn-logout').addEventListener('click', logoutTelegram);
+
 
 // ---------- boot ----------
 checkAuthGate();

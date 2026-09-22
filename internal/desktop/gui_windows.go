@@ -23,7 +23,7 @@ var ErrClosed = errors.New("window closed")
 // user closes it. Call it from the locked main OS thread.
 func RunMainWindow(url, title, dataPath string) error {
 	w := webview2.NewWithOptions(webview2.WebViewOptions{
-		Debug:     false,
+		Debug:     true,
 		AutoFocus: true,
 		DataPath:  dataPath,
 		WindowOptions: webview2.WindowOptions{

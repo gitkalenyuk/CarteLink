@@ -49,6 +49,10 @@ func (a *App) control(w http.ResponseWriter, r *http.Request, path string) {
 		a.apiClipOauthStatus(w, r)
 	case path == "/cliproxy/oauth/cancel":
 		a.apiClipOauthCancel(w, r)
+		case path == "/metrics" && r.Method == http.MethodGet:
+		a.apiMetricsGet(w, r)
+	case path == "/metrics/clear" && r.Method == http.MethodPost:
+		a.apiMetricsClear(w, r)
 	case path == "/cliproxy/oauth/close-browser" && r.Method == http.MethodPost:
 		a.apiClipOauthCloseBrowser(w, r)
 	default:

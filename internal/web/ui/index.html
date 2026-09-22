@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CarteLink</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=2.2.1">
 </head>
 <body>
 <div class="app">
@@ -219,21 +219,99 @@
           <select id="applyAllTiersSelect"></select>
           <button id="btnApplyAllTiers" class="btn btn-sm btn-accent">Застосувати до Haiku, Sonnet, Opus</button>
         </div>
-        <div class="tier-row">
-          <span class="tier-badge haiku">Haiku</span>
-          <span class="tier-desc">найшвидша · дрібні/фонові задачі <span class="help-tip" data-tip="Рівень для швидких пошукових та допоміжних операцій (рекомендується Gemini 3.8 Flash).">?</span></span>
-          <select id="tierHaiku"></select>
+        <div class="client-tabs">
+          <button type="button" class="client-tab active" data-client="claude">Claude Code</button>
+          <button type="button" class="client-tab" data-client="cursor">Cursor</button>
+          <button type="button" class="client-tab" data-client="codex">Codex</button>
+          <button type="button" class="client-tab" data-client="windsurf">Windsurf</button>
         </div>
-        <div class="tier-row">
-          <span class="tier-badge sonnet">Sonnet</span>
-          <span class="tier-desc">основна · кодинг/чат <span class="help-tip" data-tip="Основний робочий рівень Claude Code для написання коду та аналізу проекту.">?</span></span>
-          <select id="tierSonnet"></select>
+
+        <!-- Claude Code Tiers -->
+        <div id="tiers-group-claude" class="client-tiers-group">
+          <div class="tier-row">
+            <span class="tier-badge haiku">Haiku</span>
+            <span class="tier-desc">найшвидша · дрібні/фонові задачі <span class="help-tip" data-tip="Рівень для швидких пошукових та допоміжних операцій (рекомендується Gemini 3.8 Flash).">?</span></span>
+            <select id="tierHaiku"></select>
+          </div>
+          <div class="tier-row">
+            <span class="tier-badge sonnet">Sonnet</span>
+            <span class="tier-desc">основна · кодинг/чат <span class="help-tip" data-tip="Основний робочий рівень Claude Code для написання коду та аналізу проекту.">?</span></span>
+            <select id="tierSonnet"></select>
+          </div>
+          <div class="tier-row">
+            <span class="tier-badge opus">Opus</span>
+            <span class="tier-desc">найрозумніша · важкі задачі <span class="help-tip" data-tip="Рівень найвищого інтелекту для глибокого архітектурного планування та складних рефакторингів.">?</span></span>
+            <select id="tierOpus"></select>
+          </div>
         </div>
-        <div class="tier-row">
-          <span class="tier-badge opus">Opus</span>
-          <span class="tier-desc">найрозумніша · важкі задачі <span class="help-tip" data-tip="Рівень найвищого інтелекту для глибокого архітектурного планування та складних рефакторингів.">?</span></span>
-          <select id="tierOpus"></select>
+
+        <!-- Cursor Tiers -->
+        <div id="tiers-group-cursor" class="client-tiers-group" style="display:none">
+          <div class="tier-row">
+            <span class="tier-badge cursor">Cursor Small</span>
+            <span class="tier-desc">швидка · автодоповнення/курсор (cursor-small)</span>
+            <select id="tierCursorSmall"></select>
+          </div>
+          <div class="tier-row">
+            <span class="tier-badge cursor">Cursor Sonnet</span>
+            <span class="tier-desc">робоча · кодинг (claude-3-5-sonnet в Cursor)</span>
+            <select id="tierCursorSonnet"></select>
+          </div>
+          <div class="tier-row">
+            <span class="tier-badge cursor">Cursor Primary</span>
+            <span class="tier-desc">основна · gpt-4o / primary agent model</span>
+            <select id="tierCursorPrimary"></select>
+          </div>
         </div>
+
+        <!-- Codex Tiers -->
+        <div id="tiers-group-codex" class="client-tiers-group" style="display:none">
+          <div class="tier-row">
+            <span class="tier-badge codex">Codex Mini</span>
+            <span class="tier-desc">легка · швидкі запити (gpt-4o-mini)</span>
+            <select id="tierCodexMini"></select>
+          </div>
+          <div class="tier-row">
+            <span class="tier-badge codex">Codex Smart</span>
+            <span class="tier-desc">основна · smart agent (gpt-4o)</span>
+            <select id="tierCodexSmart"></select>
+          </div>
+          <div class="tier-row">
+            <span class="tier-badge codex">Codex Reason</span>
+            <span class="tier-desc">міркування · складні задачі (o1 / o3 / reasoning)</span>
+            <select id="tierCodexReason"></select>
+          </div>
+        </div>
+
+        <!-- Windsurf Tiers -->
+        <div id="tiers-group-windsurf" class="client-tiers-group" style="display:none">
+          <div class="tier-row">
+            <span class="tier-badge windsurf">Cascade Fast</span>
+            <span class="tier-desc">швидкий потік (windsurf-fast / cascade-fast)</span>
+            <select id="tierWindsurfFast"></select>
+          </div>
+          <div class="tier-row">
+            <span class="tier-badge windsurf">Cascade Base</span>
+            <span class="tier-desc">базова модель (windsurf-base / cascade-base)</span>
+            <select id="tierWindsurfBase"></select>
+          </div>
+          <div class="tier-row">
+            <span class="tier-badge windsurf">Cascade Adv</span>
+            <span class="tier-desc">просунута модель (cascade-advanced)</span>
+            <select id="tierWindsurfAdv"></select>
+          </div>
+        </div>
+
+        <div class="tier-row" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
+          <span class="tier-badge" style="background:rgba(255,255,255,0.08);color:var(--text)">Незіставлені</span>
+          <span class="tier-desc">стратегія для моделей без мапінгу <span class="help-tip" data-tip="Вибір поведінки, коли клієнт запитує модель, якої немає в списку мапінгу.">?</span></span>
+          <select id="unmappedStrategySelect">
+            <option value="passthrough">Йде як є (Pass-through)</option>
+            <option value="default">Перенаправляти на модель за замовчуванням (Default Model)</option>
+            <option value="fallback">Перенаправляти на модель за замовчуванням (Default Model)</option>
+          </select>
+        </div>
+
         <div class="row-end"><button class="btn btn-accent" id="btnSaveTiers">Зберегти мапінг</button></div>
         <span id="tiers-msg" class="msg"></span>
       </div>
@@ -346,7 +424,13 @@
       </div>
 
       <div class="card">
-        <div class="card-title">Останні запити (Live Usage Queue)</div>
+        <div class="card-title">
+          Останні запити (Live Usage Queue)
+          <div class="right" style="display:flex;gap:8px">
+            <button class="btn btn-mini" id="btnMetricsExport">Експорт JSON</button>
+            <button class="btn btn-mini btn-ghost" id="btnMetricsClear" style="color:var(--err)">Очистити</button>
+          </div>
+        </div>
         <div id="recent-requests-table">…</div>
       </div>
     </section>
@@ -654,6 +738,6 @@ export ANTHROPIC_MODEL="gemini-3.8-flash-high"</pre>
 
 <div id="toast" class="toast hidden"></div>
 <script src="presets.js"></script>
-<script src="app.js"></script>
+<script src="app.js?v=2.2.1"></script>
 </body>
 </html>

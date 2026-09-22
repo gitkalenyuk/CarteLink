@@ -10,3 +10,11 @@ e2ehome/
 # editor
 .vscode/
 .idea/
+
+# testing & temporary scripts
+*.py
+test_*/
+test_*
+generate_*.py
+inspect_response.py
+tools/

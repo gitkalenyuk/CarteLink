@@ -62,6 +62,7 @@ type App struct {
 	authUser      *config.AuthUser
 	loopbackSrv   *http.Server
 	loopbackNonce string
+	metricsStore  *MetricsStore
 }
 
 // NewApp builds the app around the config. The embedded service reference is
@@ -70,6 +71,8 @@ func NewApp(cfg *config.Config) *App {
 	a := &App{
 		cfg: cfg,
 	}
+	metricsPath := filepath.Join(config.DataDir(), "metrics.json")
+	a.metricsStore = NewMetricsStore(metricsPath)
 	return a
 }
 
@@ -262,13 +265,19 @@ func (a *App) CloseOAuthBrowser() {
 	}
 }
 
-// UIHandler serves the embedded UI files under /ui/.
+// UIHandler serves the embedded UI files under /ui/ with no-cache headers.
 func UIHandler() http.Handler {
 	sub, err := fs.Sub(uiFS, "ui")
 	if err != nil {
 		panic(err)
 	}
-	return http.FileServer(http.FS(sub))
+	fsHandler := http.FileServer(http.FS(sub))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+		fsHandler.ServeHTTP(w, r)
+	})
 }
 
 // ControlHandler returns the /api/* control surface as a standalone handler
@@ -483,4 +492,81 @@ func anyToString(v any) string {
 		return ""
 	}
 	return fmt.Sprint(v)
+}
+
+
+// MetricsStore returns the metrics store instance.
+func (a *App) MetricsStore() *MetricsStore {
+	return a.metricsStore
+}
+
+// ActiveModels collects all model IDs available from OAuth accounts and custom providers.
+func (a *App) ActiveModels() []string {
+	modelsMap := make(map[string]bool)
+
+	cfg := a.snapshotConfig()
+	for _, p := range cfg.Providers {
+		for _, m := range p.Models {
+			m = strings.TrimSpace(m)
+			if m != "" {
+				modelsMap[m] = true
+			}
+		}
+	}
+
+	if a.EngineRunning() && !a.Paused() {
+		status, raw, _ := a.mgmtRequest(http.MethodGet, "/v0/management/auth-files", nil)
+		if status == http.StatusOK {
+			var afData struct {
+				Files []struct {
+					Models []any `json:"models"`
+				} `json:"files"`
+			}
+			if json.Unmarshal(raw, &afData) == nil {
+				for _, f := range afData.Files {
+					for _, m := range f.Models {
+						switch mv := m.(type) {
+						case string:
+							if strings.TrimSpace(mv) != "" {
+								modelsMap[strings.TrimSpace(mv)] = true
+							}
+						case map[string]any:
+							if id, ok := mv["id"].(string); ok && strings.TrimSpace(id) != "" {
+								modelsMap[strings.TrimSpace(id)] = true
+							} else if name, ok := mv["name"].(string); ok && strings.TrimSpace(name) != "" {
+								modelsMap[strings.TrimSpace(name)] = true
+							}
+						}
+					}
+				}
+			}
+		}
+
+		status, raw, _ = a.mgmtRequest(http.MethodGet, "/v0/management/openai-compatibility", nil)
+		if status == http.StatusOK {
+			var ocData []struct {
+				Models []string `json:"models"`
+			}
+			if json.Unmarshal(raw, &ocData) == nil {
+				for _, oc := range ocData {
+					for _, m := range oc.Models {
+						m = strings.TrimSpace(m)
+						if m != "" {
+							modelsMap[m] = true
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if len(modelsMap) == 0 {
+		return []string{"claude-3-5-sonnet", "gpt-4o", "gemini-2.0-flash"}
+	}
+
+	res := make([]string, 0, len(modelsMap))
+	for m := range modelsMap {
+		res = append(res, m)
+	}
+	return res
 }

@@ -62,6 +62,7 @@ func main() {
 	app := web.NewApp(cfg)
 	app.InitAuth()
 	app.StartAuthWatchdog()
+	app.StartMetricsCollector()
 
 	// Redirect stdout/stderr into a log file when there is no console
 	// (the -H=windowsgui build). gin writers are re-pointed too — the engine
@@ -478,7 +479,6 @@ func resolveModelName(cfg *config.Config, want string) string {
 	uncloaked := uncloakClaudeDDModel(want)
 
 	// 1. Exact mapping (official-models swaps) — highest specificity.
-	// Check original want first, then uncloaked.
 	if mapped, ok := r.ModelMap[want]; ok && mapped != "" {
 		return strip(mapped)
 	}
@@ -486,29 +486,65 @@ func resolveModelName(cfg *config.Config, want string) string {
 		return strip(mapped)
 	}
 
-	// 2. Tier mapping.
-	m := uncloaked
-	switch {
-	case strings.Contains(uncloaked, "haiku") && r.Tiers.Haiku != "":
-		m = r.Tiers.Haiku
-	case strings.Contains(uncloaked, "sonnet") && r.Tiers.Sonnet != "":
-		m = r.Tiers.Sonnet
-	case strings.Contains(uncloaked, "opus") && r.Tiers.Opus != "":
-		m = r.Tiers.Opus
-	}
-	if mapped, ok := r.ModelMap[m]; ok && mapped != "" {
-		m = mapped
-	}
-	m = strip(m)
+	// 2. Multi-client tier mapping.
+	m := ""
+	lw := strings.ToLower(uncloaked)
 
-	// 3. Empty/generic names fall back to the default model.
-	if m == "" || m == "*" {
+	switch {
+	// Claude Code tiers
+	case strings.Contains(lw, "haiku") && r.Tiers.Haiku != "":
+		m = r.Tiers.Haiku
+	case strings.Contains(lw, "sonnet") && r.Tiers.Sonnet != "":
+		m = r.Tiers.Sonnet
+	case strings.Contains(lw, "opus") && r.Tiers.Opus != "":
+		m = r.Tiers.Opus
+
+	// Cursor tiers
+	case (lw == "cursor-small" || strings.Contains(lw, "small")) && r.Tiers.CursorSmall != "":
+		m = r.Tiers.CursorSmall
+	case strings.Contains(lw, "cursor-sonnet") && r.Tiers.CursorSonnet != "":
+		m = r.Tiers.CursorSonnet
+	case (lw == "cursor-primary" || lw == "cursor-default") && r.Tiers.CursorPrimary != "":
+		m = r.Tiers.CursorPrimary
+
+	// Codex tiers
+	case (strings.Contains(lw, "mini") || lw == "codex-mini") && r.Tiers.CodexMini != "":
+		m = r.Tiers.CodexMini
+	case (lw == "codex-smart" || lw == "codex-default") && r.Tiers.CodexSmart != "":
+		m = r.Tiers.CodexSmart
+	case (strings.Contains(lw, "reason") || strings.Contains(lw, "o1") || strings.Contains(lw, "o3") || lw == "codex-reason") && r.Tiers.CodexReason != "":
+		m = r.Tiers.CodexReason
+
+	// Windsurf tiers
+	case (strings.Contains(lw, "fast") || lw == "windsurf-fast" || lw == "cascade-fast") && r.Tiers.WindsurfFast != "":
+		m = r.Tiers.WindsurfFast
+	case (lw == "windsurf-base" || lw == "cascade-base") && r.Tiers.WindsurfBase != "":
+		m = r.Tiers.WindsurfBase
+	case (strings.Contains(lw, "advanced") || lw == "windsurf-adv" || lw == "cascade-adv") && r.Tiers.WindsurfAdv != "":
+		m = r.Tiers.WindsurfAdv
+	}
+
+	if m != "" {
+		if mapped, ok := r.ModelMap[m]; ok && mapped != "" {
+			m = mapped
+		}
+		return strip(m)
+	}
+
+	// 3. Unmapped model strategy
+	if uncloaked == "" || uncloaked == "*" {
 		if r.DefaultModel != "" {
 			return strip(r.DefaultModel)
 		}
 		return uncloaked
 	}
-	return m
+
+	// If UnmappedStrategy is explicitly "fallback" (or "default_model"), use default model
+	if (r.UnmappedStrategy == "fallback" || r.UnmappedStrategy == "default_model") && r.DefaultModel != "" {
+		return strip(r.DefaultModel)
+	}
+
+	return uncloaked
 }
 
 // waitReady polls /healthz until the server answers or the timeout expires.

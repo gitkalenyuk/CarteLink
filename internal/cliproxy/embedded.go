@@ -101,12 +101,14 @@ func SyncConfigYAML(path string, m Managed) error {
 		// let the common path below fill in the managed keys, so the output
 		// is byte-stable across syncs.
 		doc = map[string]any{
-			"logging-to-file":          false,
-			"usage-statistics-enabled": true,
-			"request-log":              false,
+			"logging-to-file":                     false,
+			"usage-statistics-enabled":            true,
+			"request-log":                         false,
+			"redis-usage-queue-retention-seconds": 3600,
 		}
 	}
 
+	doc["redis-usage-queue-retention-seconds"] = 3600
 	doc["host"] = m.Host
 	doc["port"] = m.Port
 	rm, _ := doc["remote-management"].(map[string]any)

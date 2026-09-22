@@ -35,6 +35,71 @@ func TestResolveModelName(t *testing.T) {
 	}
 }
 
+func TestMultiClientTiersAndUnmappedStrategy(t *testing.T) {
+	cfg := config.Defaults()
+	// Cursor tiers
+	cfg.Routing.Tiers.CursorSmall = "provider:gemini-3.8-flash"
+	cfg.Routing.Tiers.CursorSonnet = "anthropic:claude-3-7-sonnet"
+	cfg.Routing.Tiers.CursorPrimary = "openai:gpt-4o"
+
+	// Codex tiers
+	cfg.Routing.Tiers.CodexMini = "openrouter:gpt-4o-mini"
+	cfg.Routing.Tiers.CodexSmart = "openai:gpt-4o"
+	cfg.Routing.Tiers.CodexReason = "openai:o3-mini"
+
+	// Windsurf tiers
+	cfg.Routing.Tiers.WindsurfFast = "gemini-3.7-flash"
+	cfg.Routing.Tiers.WindsurfBase = "claude-3-5-sonnet"
+	cfg.Routing.Tiers.WindsurfAdv = "claude-3-7-sonnet"
+
+	cfg.Routing.DefaultModel = "fallback-default-model"
+
+	// Test Cursor matches
+	if got := resolveModelName(cfg, "cursor-small"); got != "gemini-3.8-flash" {
+		t.Errorf("expected cursor-small -> gemini-3.8-flash, got %s", got)
+	}
+	if got := resolveModelName(cfg, "cursor-sonnet"); got != "claude-3-7-sonnet" {
+		t.Errorf("expected cursor-sonnet -> claude-3-7-sonnet, got %s", got)
+	}
+	if got := resolveModelName(cfg, "cursor-primary"); got != "gpt-4o" {
+		t.Errorf("expected cursor-primary -> gpt-4o, got %s", got)
+	}
+
+	// Test Codex matches
+	if got := resolveModelName(cfg, "codex-mini"); got != "gpt-4o-mini" {
+		t.Errorf("expected codex-mini -> gpt-4o-mini, got %s", got)
+	}
+	if got := resolveModelName(cfg, "codex-smart"); got != "gpt-4o" {
+		t.Errorf("expected codex-smart -> gpt-4o, got %s", got)
+	}
+	if got := resolveModelName(cfg, "codex-reason"); got != "o3-mini" {
+		t.Errorf("expected codex-reason -> o3-mini, got %s", got)
+	}
+
+	// Test Windsurf matches
+	if got := resolveModelName(cfg, "cascade-fast"); got != "gemini-3.7-flash" {
+		t.Errorf("expected cascade-fast -> gemini-3.7-flash, got %s", got)
+	}
+	if got := resolveModelName(cfg, "cascade-base"); got != "claude-3-5-sonnet" {
+		t.Errorf("expected cascade-base -> claude-3-5-sonnet, got %s", got)
+	}
+	if got := resolveModelName(cfg, "cascade-advanced"); got != "claude-3-7-sonnet" {
+		t.Errorf("expected cascade-advanced -> claude-3-7-sonnet, got %s", got)
+	}
+
+	// Test UnmappedStrategy: passthrough
+	cfg.Routing.UnmappedStrategy = "passthrough"
+	if got := resolveModelName(cfg, "custom-unmapped-model"); got != "custom-unmapped-model" {
+		t.Errorf("expected passthrough, got %s", got)
+	}
+
+	// Test UnmappedStrategy: fallback
+	cfg.Routing.UnmappedStrategy = "fallback"
+	if got := resolveModelName(cfg, "custom-unmapped-model"); got != "fallback-default-model" {
+		t.Errorf("expected fallback-default-model, got %s", got)
+	}
+}
+
 func TestIsBlacklisted(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.ModelBlacklist = []string{" GPT-4o ", "gemini-3-flash"}
