@@ -45,7 +45,7 @@ func (a *App) apiServerRestart(w http.ResponseWriter, r *http.Request) {
 	jsonWrite(w, http.StatusOK, anyMap{
 		"ok":         true,
 		"restarting": true,
-		"port":       cfg.Cliproxy.Port,
+		"port":       a.EffectivePort(),
 		"host":       config.DisplayHost(cfg.Cliproxy.Host),
 	})
 }
@@ -58,7 +58,7 @@ func (a *App) waitForEngine(timeout time.Duration) bool {
 		if a.EngineRunning() {
 			cfg := a.snapshotConfig()
 			client := &http.Client{Timeout: time.Second}
-			if resp, err := client.Get("http://" + config.DisplayHost(cfg.Cliproxy.Host) + ":" + itoa(cfg.Cliproxy.Port) + "/healthz"); err == nil {
+			if resp, err := client.Get("http://" + config.DisplayHost(cfg.Cliproxy.Host) + ":" + itoa(a.EffectivePort()) + "/healthz"); err == nil {
 				_ = resp.Body.Close()
 				if resp.StatusCode >= 200 && resp.StatusCode < 500 {
 					return true
@@ -93,7 +93,7 @@ func (a *App) apiGenerateKey(w http.ResponseWriter, r *http.Request) {
 		// below as well, which also drops the retired key there).
 		_, _, _ = a.mgmtRequest(http.MethodPut, "/v0/management/api-keys", mustJSON(keys))
 	}
-	if err := a.SyncYAML(cfg); err != nil {
+	if err := a.SyncYAML(cfg, old); err != nil {
 		jsonWrite(w, http.StatusInternalServerError, anyMap{"ok": false, "error": err.Error()})
 		return
 	}
@@ -116,19 +116,38 @@ func mustJSON(v any) []byte {
 }
 
 // apiAccountToProvider: POST /api/account-to-provider {"name": "<auth file>"}.
-// Creates/updates a CartelGate provider entry carrying the account's real
+// Creates/updates a CarteLink provider entry carrying the account's real
 // model list (fetched from the engine), so the Models page can offer those
 // models in the tier dropdowns. The engine itself already routes by model
 // name — this entry is the user-visible handle for the account.
 func (a *App) apiAccountToProvider(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name string `json:"name"`
+		// Auto is set by the Accounts page's background sync: it must not
+		// re-create providers the user removed, nor re-enable disabled ones.
+		Auto bool `json:"auto"`
 	}
 	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req)
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		jsonWrite(w, http.StatusBadRequest, anyMap{"ok": false, "error": "name is required"})
 		return
+	}
+	if req.Auto {
+		id := "cp-" + accountFamily(name) + "-" + shortID(name)
+		cfg := a.snapshotConfig()
+		for _, h := range cfg.HiddenAccounts {
+			if h == id {
+				jsonWrite(w, http.StatusOK, anyMap{"ok": true, "id": id, "skipped": "hidden"})
+				return
+			}
+		}
+		for _, p := range cfg.Providers {
+			if p.ID == id {
+				jsonWrite(w, http.StatusOK, anyMap{"ok": true, "id": id, "skipped": "exists"})
+				return
+			}
+		}
 	}
 
 	// Fetch the account's models from the engine (best effort).
@@ -159,11 +178,18 @@ func (a *App) apiAccountToProvider(w http.ResponseWriter, r *http.Request) {
 	for i := range cfg.Providers {
 		if cfg.Providers[i].ID == id {
 			cfg.Providers[i].Models = models
-			cfg.Providers[i].Enabled = true
 			replaced = true
 			break
 		}
 	}
+	// An explicit (non-auto) add brings a hidden account back.
+	kept := make([]string, 0, len(cfg.HiddenAccounts))
+	for _, h := range cfg.HiddenAccounts {
+		if h != id {
+			kept = append(kept, h)
+		}
+	}
+	cfg.HiddenAccounts = kept
 	if !replaced {
 		cfg.Providers = append(cfg.Providers, config.Provider{
 			ID:      id,
@@ -185,6 +211,41 @@ func (a *App) apiAccountToProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonWrite(w, http.StatusOK, anyMap{"ok": true, "id": id, "models": len(models)})
+}
+
+// apiAccountProviderHide: POST /api/account-provider/hide {"id"} — remembers
+// that the user removed an account provider so the auto-sync leaves it gone.
+func (a *App) apiAccountProviderHide(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req)
+	id := strings.TrimSpace(req.ID)
+	if id == "" {
+		jsonWrite(w, http.StatusBadRequest, anyMap{"ok": false, "error": "id is required"})
+		return
+	}
+	a.mu.Lock()
+	cfg := a.cfg.Clone()
+	found := false
+	for _, h := range cfg.HiddenAccounts {
+		if h == id {
+			found = true
+		}
+	}
+	if !found {
+		cfg.HiddenAccounts = append(cfg.HiddenAccounts, id)
+	}
+	err := cfg.Save()
+	if err == nil {
+		a.cfg = cfg
+	}
+	a.mu.Unlock()
+	if err != nil {
+		jsonWrite(w, http.StatusInternalServerError, anyMap{"ok": false, "error": err.Error()})
+		return
+	}
+	jsonWrite(w, http.StatusOK, anyMap{"ok": true})
 }
 
 // accountFamily guesses the account family from the auth file name:

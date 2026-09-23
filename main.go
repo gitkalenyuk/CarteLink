@@ -1,9 +1,10 @@
-// CartelGate — one process, one port, one window. The original CLIProxyAPI
+// CarteLink — one process, one port, one window. The original CLIProxyAPI
 // source code (third_party/CLIProxyAPI) is compiled into this binary and runs
 // as the server: the same /v1/*, /v1beta/*, /v0/management/* surface as
-// upstream, plus the CartelGate dark GUI mounted on the same engine. On
-// Windows the app opens a desktop window (WebView2); with --headless (or on
-// other platforms) it stays a console server and opens the default browser.
+// upstream, plus the CarteLink UI mounted on the same engine. On Windows the
+// app opens a WebView2 window with a tray icon, on macOS (cgo build) a native
+// WKWebView window; with --headless (or without a GUI build) it stays a
+// console server and opens the default browser.
 package main
 
 import (
@@ -36,20 +37,34 @@ import (
 	"cartelgate/internal/cliproxy"
 	"cartelgate/internal/config"
 	"cartelgate/internal/desktop"
+	"cartelgate/internal/instance"
 	"cartelgate/internal/web"
 )
 
-func main() {
-	// The window (and its COM apartment) must live on one OS thread.
-	runtime.LockOSThread()
+// The window (WebView2's COM apartment on Windows, Cocoa on macOS) must live
+// on the main OS thread, so pin main to it before main() runs.
+func init() { runtime.LockOSThread() }
 
+func main() {
 	headless := flag.Bool("headless", false, "run the server without the desktop window")
-	portOverride := flag.Int("port", 0, "override the configured engine port")
+	portOverride := flag.Int("port", 0, "override the configured engine port (not saved)")
+	minimized := flag.Bool("minimized", false, "start hidden in the tray (used by autostart)")
 	flag.Parse()
+
+	// Single instance: a second launch brings the running copy's window up
+	// instead of starting another gateway on another port.
+	if !*headless && *portOverride == 0 {
+		if pid, port, ok := instance.Existing(); ok {
+			desktop.AllowForeground(pid)
+			if instance.Show(port) {
+				return
+			}
+		}
+	}
 
 	cfg, err := config.Load()
 	if err != nil && !errors.Is(err, config.ErrCorrupt) {
-		desktop.Alert("CartelGate", "Не вдалось прочитати налаштування: "+err.Error())
+		desktop.Alert(config.AppName, "Не вдалось прочитати налаштування: "+err.Error())
 		os.Exit(1)
 	}
 	configWarning := ""
@@ -59,20 +74,13 @@ func main() {
 	if *portOverride > 0 {
 		cfg.Cliproxy.Port = *portOverride
 	}
-	app := web.NewApp(cfg)
-	app.InitAuth()
-	app.StartAuthWatchdog()
-	app.StartMetricsCollector()
 
 	// Redirect stdout/stderr into a log file when there is no console
-	// (the -H=windowsgui build). gin writers are re-pointed too — the engine
-	// is constructed later, inside Start().
-	useGUI := runtime.GOOS == "windows" && !*headless && desktop.Supported()
+	// (the -H=windowsgui build, or a macOS .app). gin writers are re-pointed
+	// too — the engine is constructed later, inside Start().
+	useGUI := !*headless && desktop.Supported()
 	if useGUI {
-		// Detach and hide any console window immediately
-		kernel32 := syscall.NewLazyDLL("kernel32.dll")
-		freeConsole := kernel32.NewProc("FreeConsole")
-		_, _, _ = freeConsole.Call()
+		desktop.DetachConsole()
 	}
 	if useGUI {
 		_ = os.MkdirAll(config.CliproxyLogsDir(), 0o755)
@@ -92,37 +100,37 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// Pick a usable port before the engine binds: if the configured one is
-	// taken (another copy, the user's sidecar, …) move to the next free one
-	// instead of dying. Never touch whatever holds the port.
+	app := web.NewApp(cfg)
+	app.InitAuth()
+	app.StartAuthWatchdog()
+	app.StartMetricsCollector()
+	desktop.RefreshAutostart()
+
+	// The port is fixed (clients are configured for it). If something else
+	// holds it, run on the next free one for this session only — never save
+	// it, so the next start goes back to the configured port.
 	movedFrom := 0
 	if p, changed := pickFreePort(cfg.Cliproxy.Host, cfg.Cliproxy.Port); changed {
 		movedFrom = cfg.Cliproxy.Port
-		cfg.Cliproxy.Port = p
-		if *portOverride > 0 {
-			log.Printf("port %d busy — CartelGate moved to %d (not saved: --port override)", movedFrom, p)
-		} else if err := cfg.Save(); err != nil {
-			log.Println("save config after port move:", err)
-		} else {
-			log.Printf("port %d busy — CartelGate moved to %d (saved)", movedFrom, p)
-		}
+		log.Printf("port %d busy — CarteLink uses %d for this session (not saved)", movedFrom, p)
+		app.SetSessionPort(p)
 	}
 
-	// The embedded service owns the listener; CartelGate mounts on top of it.
-	port := cfg.Cliproxy.Port
-	host := cfg.Cliproxy.Host
+	// The embedded service owns the listener; CarteLink mounts on top of it.
 	cfgPath := web.EngineCfgPath()
 
 	// Keep config.yaml aligned with our settings (management edits preserved:
-	// only the keys CartelGate owns are rewritten).
+	// only the keys CarteLink owns are rewritten).
 	if err := app.SyncYAML(cfg); err != nil {
 		fail(useGUI, "config.yaml", err)
 	}
 	if err := cfg.Save(); err != nil {
 		log.Println("save config:", err)
 	}
+	port := app.EffectivePort()
+	host := cfg.Cliproxy.Host
 
-	// Mount CartelGate GUI + control API on the shared Gin engine.
+	// Mount CarteLink GUI + control API on the shared Gin engine.
 	mount := func(engine *gin.Engine) {
 		engine.Any("/ui/*path", gin.WrapH(http.StripPrefix("/ui", web.UIHandler())))
 		engine.Any("/api/*path", gin.WrapH(web.ControlHandler(app)))
@@ -133,13 +141,13 @@ func main() {
 	// Root middleware runs ahead of every engine route. Jobs:
 	//   1. send "/" to the GUI (upstream registers its own JSON root, so this
 	//      has to intercept before routing, not add a route);
-	//   2. pause-gate: while "stopped" from the UI, API traffic gets 503 but
+	//   2. auth gate: model traffic needs a verified Telegram membership;
+	//   3. pause-gate: while "stopped" from the UI, API traffic gets 503 but
 	//      the panel, control API and healthz stay alive (they share the
 	//      port — a hard server shutdown would kill the panel too);
-	//   3. Claude tier mapping — rewrite the requested model name on the
-	//      Anthropic/OpenAI chat endpoints using Routing.Tiers / ModelMap
-	//      (mirrors the Electron gateway's resolveModel; the mapping is read
-	//      per request, so saving it in the UI applies immediately).
+	//   4. model mapping — rewrite the requested model name on the chat
+	//      endpoints (read per request, so saving it in the UI applies
+	//      immediately) and serve an honest /v1/models.
 	root := func(c *gin.Context) {
 		if c.Request.URL.Path == "/" {
 			c.Redirect(302, "/ui/")
@@ -181,7 +189,8 @@ func main() {
 		}
 		if c.Request.Method == http.MethodPost {
 			switch p {
-			case "/v1/messages", "/v1/chat/completions":
+			case "/v1/messages", "/v1/messages/count_tokens", "/v1/chat/completions",
+				"/v1/completions", "/v1/responses":
 				rewriteModel(c, app)
 			}
 		}
@@ -212,12 +221,25 @@ func main() {
 	if err := waitReady(base, 15*time.Second); err != nil {
 		fail(useGUI, "server did not become ready", err)
 	}
+	instance.Register(port)
+	defer instance.Unregister()
+	app.StartModelCatalog()
 
 	uiURL := base + "/ui/"
 	if movedFrom != 0 {
 		// Let the UI explain the port move (see the banner code in app.js).
 		uiURL += "?moved=" + strconv.Itoa(movedFrom) + "&port=" + strconv.Itoa(port)
 	}
+
+	// A second launch (or the tray) asks this copy to show itself.
+	guiActive := useGUI
+	app.SetShowHandler(func() {
+		if guiActive {
+			desktop.ShowMainWindow()
+		} else {
+			openBrowser(uiURL)
+		}
+	})
 
 	// If the engine dies on its own, tell the user instead of hanging. The
 	// error channel is shared across restarts, so drain it in a loop; normal
@@ -248,6 +270,7 @@ func main() {
 		<-sig
 		log.Println("shutting down…")
 		shuttingDown.Store(true)
+		instance.Unregister()
 		cancel()
 		emb.Stop()
 		os.Exit(0)
@@ -256,19 +279,28 @@ func main() {
 	if configWarning != "" {
 		log.Println(configWarning)
 		if useGUI {
-			desktop.Alert("CarteLink", configWarning)
+			desktop.Alert(config.AppName, configWarning)
 		} else {
 			fmt.Fprintln(os.Stderr, configWarning)
 		}
 	}
 
 	if useGUI {
-		// The desktop app: one window, opened automatically. Closing the
-		// window quits the app.
-		err := desktop.RunMainWindow(uiURL, "CarteLink", config.DataDir())
+		// The desktop app: one window, opened automatically. Closing it hides
+		// to the tray (Windows, if enabled) or quits.
+		err := desktop.RunMainWindow(desktop.Options{
+			URL:         uiURL,
+			Title:       config.AppName,
+			DataPath:    config.DataDir(),
+			CloseToTray: func() bool { return app.CurrentConfig().Desktop.CloseToTray },
+			StartHidden: *minimized,
+		})
 		if err != nil && err != desktop.ErrClosed {
 			log.Println("window creation failed, falling back to browser:", err)
-			desktop.Alert("CarteLink", "Microsoft Edge WebView2 runtime не знайдено на цьому комп'ютері.\n\nCarteLink відкриється у вашому стандартному браузері.")
+			if runtime.GOOS == "windows" {
+				desktop.Alert(config.AppName, "Microsoft Edge WebView2 runtime не знайдено на цьому комп'ютері.\n\nCarteLink відкриється у вашому стандартному браузері.")
+			}
+			guiActive = false
 			useGUI = false
 		} else {
 			shuttingDown.Store(true)
@@ -278,7 +310,7 @@ func main() {
 		}
 	}
 
-	// Console mode (non-Windows, or --headless): print the map and open the
+	// Console mode (--headless, or no GUI build): print the map and open the
 	// default browser unless headless was requested.
 	fmt.Println("CarteLink — one server, one port (CLIProxyAPI embedded + CarteLink UI)")
 	fmt.Println("  UI:         " + uiURL)
@@ -286,9 +318,9 @@ func main() {
 	fmt.Println("  Anthropic:  " + base + "/v1/messages")
 	fmt.Println("  Gemini:     " + base + "/v1beta/models")
 	if movedFrom != 0 {
-		fmt.Printf("  (port %d was busy — moved to %d)\n", movedFrom, port)
+		fmt.Printf("  (port %d was busy — using %d for this session)\n", movedFrom, port)
 	}
-	if !*headless {
+	if !*headless && !*minimized {
 		openBrowser(uiURL)
 	}
 
@@ -379,10 +411,8 @@ func uncloakClaudeDDModel(id string) string {
 	return string(runes) + suffix
 }
 
-// rewriteModel applies the Claude tier mapping to a chat request body: a
-// model containing "haiku"/"sonnet"/"opus" is swapped for the tier's real
-// model, then the modelMap applies, then an empty/generic name falls back to
-// the default model — the same precedence as the Electron gateway.
+// rewriteModel applies the model mapping (see resolveModel) to a chat request
+// body.
 // It also resolves cloaked model IDs (claude-fable-5-dd-*) and cleans fake
 // identity prompts injected by Claude Code so models report their true identity.
 func rewriteModel(c *gin.Context, app *web.App) {
@@ -401,7 +431,7 @@ func rewriteModel(c *gin.Context, app *web.App) {
 
 	want, _ := payload["model"].(string)
 	cfg := app.CurrentConfig()
-	resolved := resolveModelName(cfg, want)
+	resolved := resolveModel(cfg, want, app.IsKnownModel)
 	changed := false
 	if resolved != want {
 		payload["model"] = resolved
@@ -419,7 +449,7 @@ func rewriteModel(c *gin.Context, app *web.App) {
 			"type": "error",
 			"error": gin.H{
 				"type":    "invalid_request_error",
-				"message": "model " + targetModel + " is blocked by the CartelGate model blacklist",
+				"message": "model " + targetModel + " is blocked by the CarteLink model blacklist",
 			},
 		})
 		return
@@ -460,91 +490,6 @@ func rewriteModel(c *gin.Context, app *web.App) {
 		}
 	}
 	c.Request.Body = io.NopCloser(bytes.NewReader(body))
-}
-
-// resolveModelName maps a client-requested model name through the routing
-// config. Precedence: an exact modelMap hit (the official-models swaps on the
-// Models page) wins over the tier substrings, because names like
-// "claude-sonnet-5" also contain a tier word but deserve their own mapping.
-// Tier and map values may be "provider:model" (UI convention) — only the
-// model part is sent upstream; the engine routes by bare model name.
-func resolveModelName(cfg *config.Config, want string) string {
-	strip := func(s string) string {
-		if i := strings.Index(s, ":"); i >= 0 && !strings.Contains(s, "://") {
-			return s[i+1:]
-		}
-		return s
-	}
-	r := &cfg.Routing
-	uncloaked := uncloakClaudeDDModel(want)
-
-	// 1. Exact mapping (official-models swaps) — highest specificity.
-	if mapped, ok := r.ModelMap[want]; ok && mapped != "" {
-		return strip(mapped)
-	}
-	if mapped, ok := r.ModelMap[uncloaked]; ok && mapped != "" {
-		return strip(mapped)
-	}
-
-	// 2. Multi-client tier mapping.
-	m := ""
-	lw := strings.ToLower(uncloaked)
-
-	switch {
-	// Claude Code tiers
-	case strings.Contains(lw, "haiku") && r.Tiers.Haiku != "":
-		m = r.Tiers.Haiku
-	case strings.Contains(lw, "sonnet") && r.Tiers.Sonnet != "":
-		m = r.Tiers.Sonnet
-	case strings.Contains(lw, "opus") && r.Tiers.Opus != "":
-		m = r.Tiers.Opus
-
-	// Cursor tiers
-	case (lw == "cursor-small" || strings.Contains(lw, "small")) && r.Tiers.CursorSmall != "":
-		m = r.Tiers.CursorSmall
-	case strings.Contains(lw, "cursor-sonnet") && r.Tiers.CursorSonnet != "":
-		m = r.Tiers.CursorSonnet
-	case (lw == "cursor-primary" || lw == "cursor-default") && r.Tiers.CursorPrimary != "":
-		m = r.Tiers.CursorPrimary
-
-	// Codex tiers
-	case (strings.Contains(lw, "mini") || lw == "codex-mini") && r.Tiers.CodexMini != "":
-		m = r.Tiers.CodexMini
-	case (lw == "codex-smart" || lw == "codex-default") && r.Tiers.CodexSmart != "":
-		m = r.Tiers.CodexSmart
-	case (strings.Contains(lw, "reason") || strings.Contains(lw, "o1") || strings.Contains(lw, "o3") || lw == "codex-reason") && r.Tiers.CodexReason != "":
-		m = r.Tiers.CodexReason
-
-	// Windsurf tiers
-	case (strings.Contains(lw, "fast") || lw == "windsurf-fast" || lw == "cascade-fast") && r.Tiers.WindsurfFast != "":
-		m = r.Tiers.WindsurfFast
-	case (lw == "windsurf-base" || lw == "cascade-base") && r.Tiers.WindsurfBase != "":
-		m = r.Tiers.WindsurfBase
-	case (strings.Contains(lw, "advanced") || lw == "windsurf-adv" || lw == "cascade-adv") && r.Tiers.WindsurfAdv != "":
-		m = r.Tiers.WindsurfAdv
-	}
-
-	if m != "" {
-		if mapped, ok := r.ModelMap[m]; ok && mapped != "" {
-			m = mapped
-		}
-		return strip(m)
-	}
-
-	// 3. Unmapped model strategy
-	if uncloaked == "" || uncloaked == "*" {
-		if r.DefaultModel != "" {
-			return strip(r.DefaultModel)
-		}
-		return uncloaked
-	}
-
-	// If UnmappedStrategy is explicitly "fallback" (or "default_model"), use default model
-	if (r.UnmappedStrategy == "fallback" || r.UnmappedStrategy == "default_model") && r.DefaultModel != "" {
-		return strip(r.DefaultModel)
-	}
-
-	return uncloaked
 }
 
 // waitReady polls /healthz until the server answers or the timeout expires.
@@ -601,11 +546,11 @@ func portAvailable(host string, port int) bool {
 func fail(useGUI bool, what string, err error) {
 	log.Printf("%s failed: %v", what, err)
 	msg := fmt.Sprintf(
-		"CartelGate не зміг стартувати.\n\n%s: %v\n\nПовний лог: %s",
+		"CarteLink не зміг стартувати.\n\n%s: %v\n\nПовний лог: %s",
 		what, err, filepath.Join(config.CliproxyLogsDir(), "app.log"),
 	)
 	if useGUI {
-		desktop.Alert("CartelGate", msg)
+		desktop.Alert(config.AppName, msg)
 	} else {
 		fmt.Fprintln(os.Stderr, msg)
 	}
@@ -755,7 +700,15 @@ func isAnthropicModelsRequest(c *gin.Context) bool {
 	return strings.HasPrefix(c.GetHeader("User-Agent"), "claude-cli")
 }
 
+// internalModelsHeader marks CarteLink's own /v1/models probe (the model
+// catalog behind the "smart" fallback): it gets the engine's raw list.
+const internalModelsHeader = "X-CarteLink-Internal"
+
 func handleAugmentedModels(c *gin.Context, app *web.App) {
+	if c.GetHeader(internalModelsHeader) == "1" {
+		c.Next()
+		return
+	}
 	rec := newResponseRecorder(c.Writer)
 	c.Writer = rec
 	c.Next()
@@ -779,22 +732,18 @@ func handleAugmentedModels(c *gin.Context, app *web.App) {
 
 	seen := make(map[string]bool)
 	var allModels []catalogModel
-
-	// 1. Add all official Claude models so Claude Code model picker has the full catalog
-	for _, m := range officialClaudeModels {
-		if !seen[m.ID] {
+	add := func(m catalogModel) {
+		if m.ID != "" && !seen[m.ID] {
 			seen[m.ID] = true
 			allModels = append(allModels, m)
 		}
 	}
+	cfg := app.CurrentConfig()
 
-	// 2. Add uncloaked models from upstream CLIProxyAPI
+	// 1. Models the engine really serves (cloaked ids shown by their real name).
 	for _, raw := range upstream.Data {
 		id, _ := raw["id"].(string)
 		uncloaked := uncloakClaudeDDModel(id)
-		if uncloaked == "" {
-			continue
-		}
 		owned, _ := raw["owned_by"].(string)
 		if owned == "" {
 			owned = "cliproxy"
@@ -803,37 +752,34 @@ func handleAugmentedModels(c *gin.Context, app *web.App) {
 		if displayName == "" || strings.Contains(displayName, "claude-fable-5-dd") {
 			displayName = friendlyModelName(uncloaked)
 		}
+		add(catalogModel{ID: uncloaked, DisplayName: displayName, OwnedBy: owned})
+	}
 
-		if !seen[uncloaked] {
-			seen[uncloaked] = true
-			allModels = append(allModels, catalogModel{
-				ID:          uncloaked,
-				DisplayName: displayName,
-				OwnedBy:     owned,
-			})
+	// 2. Models of enabled CarteLink providers.
+	for _, p := range cfg.Providers {
+		if !p.Enabled {
+			continue
+		}
+		for _, m := range p.Models {
+			m = strings.TrimSpace(m)
+			add(catalogModel{ID: m, DisplayName: friendlyModelName(m), OwnedBy: p.ID})
 		}
 	}
 
-	// 3. Add models from active providers in CartelGate config
-	cfg := app.CurrentConfig()
-	if cfg != nil {
-		for _, p := range cfg.Providers {
-			for _, m := range p.Models {
-				cleanM := strings.TrimSpace(m)
-				if cleanM != "" && !seen[cleanM] {
-					seen[cleanM] = true
-					allModels = append(allModels, catalogModel{
-						ID:          cleanM,
-						DisplayName: friendlyModelName(cleanM),
-						OwnedBy:     p.ID,
-					})
-				}
-			}
+	// 3. Aliases that currently resolve to a real model (tier aliases, table
+	// keys) and official Claude names the mapping rewrites — so client model
+	// pickers only offer names that will actually work.
+	for _, a := range servedAliases(cfg) {
+		add(catalogModel{ID: a, DisplayName: a + " → " + resolveModel(cfg, a, nil), OwnedBy: "cartelink"})
+	}
+	for _, m := range officialClaudeModels {
+		if resolveModel(cfg, m.ID, nil) != m.ID {
+			add(m)
 		}
 	}
 
-	// 3.5. Filter out blacklisted models
-	if cfg != nil && len(cfg.ModelBlacklist) > 0 {
+	// 4. Filter out blacklisted models
+	if len(cfg.ModelBlacklist) > 0 {
 		blk := make(map[string]bool)
 		for _, b := range cfg.ModelBlacklist {
 			blk[strings.ToLower(strings.TrimSpace(b))] = true
@@ -847,11 +793,11 @@ func handleAugmentedModels(c *gin.Context, app *web.App) {
 		allModels = filtered
 	}
 
-	// 4. Format according to client type
+	// 5. Format according to client type
 	var out []byte
 	var err error
 	if isAnthropic {
-		var dataList []map[string]any
+		dataList := make([]map[string]any, 0, len(allModels))
 		for _, m := range allModels {
 			dataList = append(dataList, map[string]any{
 				"type":             "model",
@@ -877,7 +823,7 @@ func handleAugmentedModels(c *gin.Context, app *web.App) {
 			"last_id":  lastID,
 		})
 	} else {
-		var dataList []map[string]any
+		dataList := make([]map[string]any, 0, len(allModels))
 		for _, m := range allModels {
 			dataList = append(dataList, map[string]any{
 				"id":       m.ID,

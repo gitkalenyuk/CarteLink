@@ -1,6 +1,8 @@
 # build outputs
 *.exe
+*.exe~
 dist/
+/cartelink
 cg-*
 vgate-*
 # runtime data
@@ -11,10 +13,10 @@ e2ehome/
 .vscode/
 .idea/
 
-# testing & temporary scripts
+# scratch files belong in Desktop\CarteLink_extras, not here
 *.py
 test_*/
-test_*
 generate_*.py
-inspect_response.py
 tools/
+*.png
+!build/*.png

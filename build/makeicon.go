@@ -1,6 +1,6 @@
 //go:build ignore
 
-// makeicon renders the CartelGate app icon (256×256 PNG): a rounded tile
+// makeicon renders the CarteLink app icon (256×256 PNG): a rounded tile
 // with the crimson→amber brand gradient and a white gate mark (arch + two
 // posts + base), matching the SVG logo in the UI sidebar.
 //

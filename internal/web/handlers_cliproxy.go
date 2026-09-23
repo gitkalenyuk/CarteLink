@@ -1,4 +1,4 @@
-// Management/OAuth passthrough for the embedded engine. The CartelGate UI
+// Management/OAuth passthrough for the embedded engine. The CarteLink UI
 // calls /api/cliproxy/... on this server; we rewrite those to the embedded
 // service's /v0/management/* endpoints and add the X-Management-Key header
 // server-side, mirroring the Electron connector's cliproxy:api IPC.
@@ -43,7 +43,7 @@ func (a *App) mgmtRequest(method, path string, body []byte) (int, []byte, string
 		return http.StatusServiceUnavailable, errJSON, "application/json"
 	}
 	cfg := a.snapshotConfig()
-	full := fmt.Sprintf("http://%s%s", net.JoinHostPort(config.DisplayHost(cfg.Cliproxy.Host), strconv.Itoa(cfg.Cliproxy.Port)), path)
+	full := fmt.Sprintf("http://%s%s", net.JoinHostPort(config.DisplayHost(cfg.Cliproxy.Host), strconv.Itoa(a.EffectivePort())), path)
 	var rdr io.Reader
 	if body != nil {
 		rdr = bytes.NewReader(body)

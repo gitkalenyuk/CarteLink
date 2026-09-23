@@ -49,7 +49,17 @@ func (a *App) control(w http.ResponseWriter, r *http.Request, path string) {
 		a.apiClipOauthStatus(w, r)
 	case path == "/cliproxy/oauth/cancel":
 		a.apiClipOauthCancel(w, r)
-		case path == "/metrics" && r.Method == http.MethodGet:
+	case path == "/app/ping" && r.Method == http.MethodGet:
+		a.apiAppPing(w, r)
+	case path == "/app/show" && r.Method == http.MethodPost:
+		a.apiAppShow(w, r)
+	case path == "/app/settings" && r.Method == http.MethodGet:
+		a.apiAppSettingsGet(w, r)
+	case path == "/app/settings" && r.Method == http.MethodPut:
+		a.apiAppSettingsPut(w, r)
+	case path == "/account-provider/hide" && r.Method == http.MethodPost:
+		a.apiAccountProviderHide(w, r)
+	case path == "/metrics" && r.Method == http.MethodGet:
 		a.apiMetricsGet(w, r)
 	case path == "/metrics/clear" && r.Method == http.MethodPost:
 		a.apiMetricsClear(w, r)

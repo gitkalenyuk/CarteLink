@@ -2,13 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "cartelgate-headless",
+      "name": "cartelink-dev",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "set CARTELGATE_HOME=%TEMP%\cg-e2e&& CartelGate.exe --headless --port 8419"],
+      "runtimeArgs": ["/c", "set CARTELINK_HOME=%TEMP%\\cl-dev\\home&& %TEMP%\\cl-dev\\CarteLink_dev.exe --headless --port 8419"],
       "port": 8419
     },
     {
-      "name": "cartelgate-attach",
+      "name": "cartelink-attach",
       "url": "http://127.0.0.1:8317",
       "port": 8317
     }

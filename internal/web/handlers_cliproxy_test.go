@@ -11,9 +11,9 @@ import (
 func TestParseModelIDs(t *testing.T) {
 	cases := map[string][]string{
 		`{"object":"list","data":[{"id":"b"},{"id":"a"},{"id":"a"}]}`: {"a", "b"},
-		`{"models":[{"name":"llama3"},{"id":"qwen"}]}`:                 {"llama3", "qwen"},
-		`["x","y"]`:                                                     {"x", "y"},
-		`not json`:                                                      {},
+		`{"models":[{"name":"llama3"},{"id":"qwen"}]}`:                {"llama3", "qwen"},
+		`["x","y"]`: {"x", "y"},
+		`not json`:  {},
 	}
 	for in, want := range cases {
 		got := parseModelIDs([]byte(in))

@@ -19,29 +19,22 @@ import (
 )
 
 func (a *App) apiAuthStatus(w http.ResponseWriter, r *http.Request) {
-	status, reason, user, brokerUrl, enabled := a.AuthStatus()
+	status, reason, user, enabled := a.AuthStatus()
 	jsonWrite(w, http.StatusOK, anyMap{
-		"ok":        true,
-		"enabled":   enabled,
-		"status":    status,
-		"reason":    reason,
-		"user":      user,
-		"brokerUrl": brokerUrl,
+		"ok":      true,
+		"enabled": enabled,
+		"status":  status,
+		"reason":  reason,
+		"user":    user,
 	})
 }
 
 func (a *App) apiAuthLogin(w http.ResponseWriter, r *http.Request) {
-	cfg := a.snapshotConfig()
-	if !cfg.Auth.Enabled {
+	if !authGateOn() {
 		jsonWrite(w, http.StatusOK, anyMap{"ok": true, "status": "authorized"})
 		return
 	}
-
-	brokerUrl := cfg.Auth.BrokerURL
-	if brokerUrl == "" {
-		brokerUrl = config.DefaultBrokerURL
-	}
-	brokerUrl = strings.TrimRight(brokerUrl, "/")
+	brokerUrl := strings.TrimRight(config.BrokerURL, "/")
 
 	nonceBytes := make([]byte, 16)
 	_, _ = rand.Read(nonceBytes)
@@ -161,8 +154,13 @@ func (a *App) apiAuthLogin(w http.ResponseWriter, r *http.Request) {
 		verified := a.VerifyAuthLive()
 
 		if !verified {
+			st, _, _, _ := a.AuthStatus()
+			title, msg := "Ти ще не в Secret YT_cartel 🧠", "Для доступу до CarteLink потрібно бути учасником закритої спільноти Secret YT_cartel 🧠."
+			if st == "offline" {
+				title, msg = "Немає звʼязку з сервером перевірки", "Спробуй ще раз за хвилину — застосунок перевірить доступ автоматично."
+			}
 			lw.WriteHeader(http.StatusOK)
-			_, _ = lw.Write([]byte(renderAuthResultHtml("Ти ще не в Secret YT_cartel 🧠", "Для доступу до CarteLink потрібно бути учасником закритої спільноти Secret YT_cartel 🧠.", false)))
+			_, _ = lw.Write([]byte(renderAuthResultHtml(title, msg, false)))
 			a.closeLoopbackSoon()
 			return
 		}
@@ -227,9 +225,12 @@ func (a *App) apiAuthLogout(w http.ResponseWriter, r *http.Request) {
 	a.authMu.Unlock()
 
 	a.mu.Lock()
-	a.cfg.Auth.Session = ""
-	a.cfg.Auth.User = nil
-	_ = a.cfg.Save()
+	cfg := a.cfg.Clone()
+	cfg.Auth.Session = ""
+	cfg.Auth.User = nil
+	cfg.Auth.LastVerified = 0
+	_ = cfg.Save()
+	a.cfg = cfg
 	a.mu.Unlock()
 
 	jsonWrite(w, http.StatusOK, anyMap{"ok": true, "status": "need_login"})
@@ -237,14 +238,13 @@ func (a *App) apiAuthLogout(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) apiAuthRecheck(w http.ResponseWriter, r *http.Request) {
 	ok := a.VerifyAuthLive()
-	status, reason, user, brokerUrl, enabled := a.AuthStatus()
+	status, reason, user, enabled := a.AuthStatus()
 	jsonWrite(w, http.StatusOK, anyMap{
-		"ok":        ok,
-		"status":    status,
-		"reason":    reason,
-		"user":      user,
-		"brokerUrl": brokerUrl,
-		"enabled":   enabled,
+		"ok":      ok,
+		"status":  status,
+		"reason":  reason,
+		"user":    user,
+		"enabled": enabled,
 	})
 }
 

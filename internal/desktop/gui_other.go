@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build !windows && !(darwin && cgo)
 
 package desktop
 
@@ -8,18 +8,30 @@ import (
 	"os"
 )
 
-// Supported reports whether this platform can open a real window. Non-Windows
-// builds have no window implementation here — the app falls back to a console
-// plus the default browser.
+// Supported reports whether this platform can open a real window. This build
+// has no window implementation — the app falls back to a console plus the
+// default browser. (macOS gets a native window when built with cgo.)
 func Supported() bool { return false }
 
-// ErrClosed mirrors the Windows variant (never returned on this platform).
-var ErrClosed = errors.New("window closed")
+// TraySupported reports whether closing the window can hide it to a tray icon.
+func TraySupported() bool { return false }
 
 // RunMainWindow is unavailable on this platform; the caller falls back.
-func RunMainWindow(url, title, dataPath string) error {
-	return errors.New("desktop window requires a GUI build (Windows)")
+func RunMainWindow(o Options) error {
+	return errors.New("desktop window requires a GUI build")
 }
+
+// ShowMainWindow is a no-op without a window.
+func ShowMainWindow() {}
+
+// Quit is a no-op without a window.
+func Quit() {}
+
+// DetachConsole is a no-op outside Windows.
+func DetachConsole() {}
+
+// AllowForeground is a no-op outside Windows.
+func AllowForeground(pid int) {}
 
 // Alert prints to stderr (non-GUI builds still have a console).
 func Alert(title, text string) {

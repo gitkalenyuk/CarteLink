@@ -1,4 +1,4 @@
-// Package config holds CartelGate's persisted configuration (config.json).
+// Package config holds CarteLink's persisted configuration (config.json).
 package config
 
 import (
@@ -16,7 +16,7 @@ import (
 )
 
 // Version is the app version reported in /health and the UI.
-const Version = "2.1.0"
+const Version = "2.3.0"
 
 // AppName is the product name used in window titles, logs and messages.
 const AppName = "CarteLink"
@@ -31,7 +31,20 @@ const (
 // copied over on first start so existing accounts and settings survive.
 var legacyHomeNames = []string{"CartelGate", "VisionGateGo"}
 
-const DefaultBrokerURL = "https://yt-cartel.vercel.app"
+// BrokerURL is the Telegram auth broker. It is compiled in (override only at
+// build time: -ldflags "-X cartelgate/internal/config.BrokerURL=https://...") so
+// the access gate cannot be redirected from config.json.
+var BrokerURL = "https://yt-cartel.vercel.app"
+
+// AuthAppID identifies CarteLink to the broker; the broker checks the group
+// configured for it (APP_GROUP_CARTELINK on Vercel).
+const AuthAppID = "cartelink"
+
+// DefaultPort is the fixed gateway port clients are configured for.
+const DefaultPort = 8317
+
+// schemaVersion is bumped when Load needs a one-time migration.
+const schemaVersion = 2
 
 type AuthUser struct {
 	ID       string `json:"id"`
@@ -39,40 +52,70 @@ type AuthUser struct {
 	Username string `json:"username,omitempty"`
 }
 
+// AuthConfig persists the Telegram session. Enabled/BrokerURL are legacy
+// fields: they are read for compatibility but ignored — the gate is always on
+// and the broker URL is compiled in.
 type AuthConfig struct {
-	Enabled   bool      `json:"enabled"`
-	BrokerURL string    `json:"brokerUrl"`
-	Session   string    `json:"session,omitempty"`
-	User      *AuthUser `json:"user,omitempty"`
+	Enabled      bool      `json:"enabled"`
+	BrokerURL    string    `json:"brokerUrl,omitempty"`
+	Session      string    `json:"session,omitempty"`
+	User         *AuthUser `json:"user,omitempty"`
+	LastVerified int64     `json:"lastVerified,omitempty"` // unix time of the last successful broker check
+}
+
+// Desktop holds window/tray preferences (autostart itself lives in the OS).
+type Desktop struct {
+	CloseToTray bool `json:"closeToTray"`
 }
 
 // Routing holds the model-mapping rules applied by the gateway middleware.
+//
+// Mode "tiers" (default): Claude Code tiers (haiku/sonnet/opus in a claude-*
+// name) plus three universal tiers reached through exact aliases
+// (cartelink-fast/main/max and the legacy cursor-*/codex-*/cascade-* names);
+// ModelMap holds exact "official model" swaps on top.
+// Mode "table": only ModelMap applies — an explicit "client model -> real
+// model" table (keys may end with * as a prefix wildcard).
 type Routing struct {
+	Mode              string            `json:"mode,omitempty"` // "tiers" | "table"
 	DefaultProviderID string            `json:"defaultProviderId"`
 	DefaultModel      string            `json:"defaultModel"`
 	ModelMap          map[string]string `json:"modelMap"`
-	Tiers             struct {
-		// Claude Code tiers
-		Haiku  string `json:"haiku"`
-		Sonnet string `json:"sonnet"`
-		Opus   string `json:"opus"`
+	Tiers             Tiers             `json:"tiers"`
+	// UnmappedStrategy: "smart" (default — a model the engine does not serve
+	// goes to DefaultModel), "passthrough", or "always" (every unmapped model
+	// goes to DefaultModel).
+	UnmappedStrategy string `json:"unmappedStrategy,omitempty"`
+}
 
-		// Cursor tiers
-		CursorSmall   string `json:"cursorSmall,omitempty"`
-		CursorSonnet  string `json:"cursorSonnet,omitempty"`
-		CursorPrimary string `json:"cursorPrimary,omitempty"`
+// Tiers are the tier targets. The Cursor*/Codex*/Windsurf* fields are legacy
+// (2.2.0) and are folded into Fast/Main/Max by Normalize.
+type Tiers struct {
+	Haiku  string `json:"haiku"`
+	Sonnet string `json:"sonnet"`
+	Opus   string `json:"opus"`
 
-		// Codex tiers
-		CodexMini   string `json:"codexMini,omitempty"`
-		CodexSmart  string `json:"codexSmart,omitempty"`
-		CodexReason string `json:"codexReason,omitempty"`
+	Fast string `json:"fast,omitempty"`
+	Main string `json:"main,omitempty"`
+	Max  string `json:"max,omitempty"`
 
-		// Windsurf tiers
-		WindsurfFast string `json:"windsurfFast,omitempty"`
-		WindsurfBase string `json:"windsurfBase,omitempty"`
-		WindsurfAdv  string `json:"windsurfAdv,omitempty"`
-	} `json:"tiers"`
-	UnmappedStrategy string `json:"unmappedStrategy,omitempty"` // "default" or "passthrough"
+	CursorSmall   string `json:"cursorSmall,omitempty"`
+	CursorSonnet  string `json:"cursorSonnet,omitempty"`
+	CursorPrimary string `json:"cursorPrimary,omitempty"`
+	CodexMini     string `json:"codexMini,omitempty"`
+	CodexSmart    string `json:"codexSmart,omitempty"`
+	CodexReason   string `json:"codexReason,omitempty"`
+	WindsurfFast  string `json:"windsurfFast,omitempty"`
+	WindsurfBase  string `json:"windsurfBase,omitempty"`
+	WindsurfAdv   string `json:"windsurfAdv,omitempty"`
+}
+
+// TierAliases lists the exact client model names that select each universal
+// tier. Matching is case-insensitive and exact — never a substring.
+var TierAliases = map[string][]string{
+	"fast": {"cartelink-fast", "cursor-small", "codex-mini", "windsurf-fast", "cascade-fast"},
+	"main": {"cartelink-main", "cursor-sonnet", "cursor-primary", "cursor-default", "codex-smart", "codex-default", "windsurf-base", "cascade-base"},
+	"max":  {"cartelink-max", "codex-reason", "windsurf-adv", "cascade-adv", "cascade-advanced"},
 }
 
 // Cliproxy is the embedded-engine section: where it listens and its keys.
@@ -99,6 +142,7 @@ type Provider struct {
 
 // Config is the on-disk schema (config.json inside Home()).
 type Config struct {
+	Schema         int        `json:"schema,omitempty"`
 	APIKey         string     `json:"apiKey"`
 	RequireKey     bool       `json:"requireKey"`
 	Auth           AuthConfig `json:"auth"`
@@ -106,10 +150,14 @@ type Config struct {
 	Routing        Routing    `json:"routing"`
 	Cliproxy       Cliproxy   `json:"cliproxy"`
 	ModelBlacklist []string   `json:"modelBlacklist"`
+	Desktop        Desktop    `json:"desktop"`
+	// HiddenAccounts are account-provider ids the user removed; the Accounts
+	// page must not re-create them automatically.
+	HiddenAccounts []string `json:"hiddenAccounts,omitempty"`
 }
 
-// Home returns the app data root. CARTELGATE_HOME (or the legacy
-// VISIONGATE_HOME) redirects everything — lets a second copy run beside the
+// Home returns the app data root. CARTELINK_HOME (or the legacy
+// CARTELGATE_HOME / VISIONGATE_HOME) redirects everything — lets a second copy run beside the
 // first with its own settings.
 // If an adjacent "data" directory or a ".portable" file exists next to the
 // executable, portable mode is auto-selected so everything stays self-contained.
@@ -165,13 +213,14 @@ func copyTree(src, dst string) error {
 		rel, _ := filepath.Rel(src, p)
 		target := filepath.Join(dst, rel)
 		if d.IsDir() {
-			// Skip the WebView2 profile: it is large and is recreated anyway.
-			if d.Name() == "EBWebView" {
+			// Skip browser profiles/caches and Electron-era leftovers: large,
+			// recreated anyway, and not used by CarteLink.
+			if p != src && skipMigrateDir(d.Name()) {
 				return filepath.SkipDir
 			}
 			return os.MkdirAll(target, 0o755)
 		}
-		if strings.HasSuffix(d.Name(), ".log") || strings.HasSuffix(d.Name(), ".log.1") {
+		if skipMigrateFile(d.Name()) {
 			return nil
 		}
 		in, err := os.Open(p)
@@ -187,6 +236,24 @@ func copyTree(src, dst string) error {
 		_, err = io.Copy(out, in)
 		return err
 	})
+}
+
+func skipMigrateDir(name string) bool {
+	switch name {
+	case "EBWebView", "Cache", "Code Cache", "GPUCache", "DawnGraphiteCache", "DawnWebGPUCache",
+		"Local Storage", "Session Storage", "Network", "Shared Dictionary", "blob_storage",
+		"oauth-browser", "logs":
+		return true
+	}
+	return strings.HasPrefix(name, "chatgpt-profile")
+}
+
+func skipMigrateFile(name string) bool {
+	switch name {
+	case "chats.json", "chatgpt-accounts.json", "log.txt", "log.txt.old", "Local State", "Preferences", "SharedStorage":
+		return true
+	}
+	return strings.HasSuffix(name, ".log") || strings.Contains(name, ".log.")
 }
 
 // ConfigPath is the main config file location.
@@ -249,7 +316,8 @@ func (c *Config) Clone() *Config {
 	return out
 }
 
-// Save persists the config with 2-space indent.
+// Save persists the config with 2-space indent. The write is atomic (temp
+// file + rename) so a crash mid-save never leaves a truncated config.json.
 func (c *Config) Save() error {
 	if err := os.MkdirAll(Home(), 0o755); err != nil {
 		return err
@@ -258,27 +326,39 @@ func (c *Config) Save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(ConfigPath(), b, 0o644)
+	return WriteFileAtomic(ConfigPath(), b)
+}
+
+// WriteFileAtomic writes data to a temp file next to path and renames it over.
+func WriteFileAtomic(path string, data []byte) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return os.WriteFile(path, data, 0o644)
+	}
+	return nil
 }
 
 // Defaults returns a fresh config. The API key is generated on Normalize.
 func Defaults() *Config {
 	c := &Config{
 		RequireKey:     true,
-		Auth: AuthConfig{
-			Enabled:   true,
-			BrokerURL: DefaultBrokerURL,
-		},
+		Auth:           AuthConfig{Enabled: true},
 		Providers:      []Provider{},
 		ModelBlacklist: []string{},
+		Desktop:        Desktop{CloseToTray: true},
 	}
+	c.Routing.Mode = "tiers"
 	c.Routing.ModelMap = map[string]string{}
-	c.Routing.UnmappedStrategy = "default"
-	c.Cliproxy = Cliproxy{Port: 8317, Host: "127.0.0.1", APIKeys: []string{}}
+	c.Routing.UnmappedStrategy = "smart"
+	c.Cliproxy = Cliproxy{Port: DefaultPort, Host: "127.0.0.1", APIKeys: []string{}}
 	return c
 }
 
-// NewKey generates a client key ("cg-" + 48 hex chars).
+// NewKey generates a client key ("cl-" + 48 hex chars).
 func NewKey() string { return KeyPrefix + randomHex(24) }
 
 // Normalize applies load-time fixups: generated key, trimmed providers,
@@ -287,16 +367,31 @@ func Normalize(c *Config) {
 	if c.APIKey == "" {
 		c.APIKey = NewKey()
 	}
-	if c.Auth.BrokerURL == "" {
-		c.Auth.BrokerURL = DefaultBrokerURL
-	}
-	c.Auth.BrokerURL = strings.TrimRight(strings.TrimSpace(c.Auth.BrokerURL), "/")
+	// The gate cannot be switched off or redirected from config.json.
+	c.Auth.Enabled = true
+	c.Auth.BrokerURL = ""
 	if c.Routing.ModelMap == nil {
 		c.Routing.ModelMap = map[string]string{}
 	}
-	if c.Routing.UnmappedStrategy == "" {
-		c.Routing.UnmappedStrategy = "default"
+	if c.Routing.Mode != "table" {
+		c.Routing.Mode = "tiers"
 	}
+	switch c.Routing.UnmappedStrategy {
+	case "passthrough", "always", "smart":
+	default:
+		// "", "default", "fallback", "default_model" (<= 2.2.0) -> smart.
+		c.Routing.UnmappedStrategy = "smart"
+	}
+	foldLegacyTiers(&c.Routing.Tiers)
+	if c.Schema < schemaVersion {
+		// <= 2.2.0 silently saved an auto-moved port (8318...8417) when 8317
+		// was busy; clients stay configured for 8317, so go back to it once.
+		if c.Cliproxy.Port > DefaultPort && c.Cliproxy.Port <= DefaultPort+100 {
+			c.Cliproxy.Port = DefaultPort
+		}
+		c.Schema = schemaVersion
+	}
+	c.HiddenAccounts = cleanStrings(c.HiddenAccounts)
 	norm := make([]Provider, 0, len(c.Providers))
 	for _, p := range c.Providers {
 		p.ID = strings.TrimSpace(p.ID)
@@ -330,6 +425,28 @@ func Normalize(c *Config) {
 	}
 }
 
+// foldLegacyTiers moves the 2.2.0 per-client tier fields into the universal
+// Fast/Main/Max tiers (first non-empty wins) and clears them.
+func foldLegacyTiers(t *Tiers) {
+	first := func(cur string, vals ...string) string {
+		if cur != "" {
+			return cur
+		}
+		for _, v := range vals {
+			if v = strings.TrimSpace(v); v != "" {
+				return v
+			}
+		}
+		return ""
+	}
+	t.Fast = first(t.Fast, t.CursorSmall, t.CodexMini, t.WindsurfFast)
+	t.Main = first(t.Main, t.CursorSonnet, t.CursorPrimary, t.CodexSmart, t.WindsurfBase)
+	t.Max = first(t.Max, t.CodexReason, t.WindsurfAdv)
+	t.CursorSmall, t.CursorSonnet, t.CursorPrimary = "", "", ""
+	t.CodexMini, t.CodexSmart, t.CodexReason = "", "", ""
+	t.WindsurfFast, t.WindsurfBase, t.WindsurfAdv = "", "", ""
+}
+
 // NormCliproxy trims fields, validates the port, and generates the
 // management secret on first use.
 func NormCliproxy(c Cliproxy) Cliproxy {
@@ -338,7 +455,7 @@ func NormCliproxy(c Cliproxy) Cliproxy {
 		c.Host = "127.0.0.1"
 	}
 	if c.Port < 1 || c.Port > 65535 {
-		c.Port = 8317
+		c.Port = DefaultPort
 	}
 	c.APIKeys = cleanStrings(c.APIKeys)
 	c.ManagementSecret = strings.TrimSpace(c.ManagementSecret)

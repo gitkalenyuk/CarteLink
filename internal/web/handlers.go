@@ -31,7 +31,8 @@ func (a *App) apiStatus(w http.ResponseWriter, r *http.Request) {
 			"paused":     a.Paused(),
 			"restarting": a.Restarting(),
 			"lastError":  a.LastError(),
-			"port":       cfg.Cliproxy.Port,
+			"port":       a.EffectivePort(),
+			"configPort": cfg.Cliproxy.Port,
 			"host":       cfg.Cliproxy.Host,
 			"version":    cliproxy.UpstreamVersion,
 		},
@@ -45,7 +46,7 @@ func (a *App) apiStatus(w http.ResponseWriter, r *http.Request) {
 // apiEndpoints returns the absolute URLs the UI shows for copy-paste.
 func (a *App) apiEndpoints(w http.ResponseWriter, r *http.Request) {
 	cfg := a.snapshotConfig()
-	base := "http://" + config.DisplayHost(cfg.Cliproxy.Host) + ":" + itoa(cfg.Cliproxy.Port)
+	base := "http://" + config.DisplayHost(cfg.Cliproxy.Host) + ":" + itoa(a.EffectivePort())
 	key := cfg.APIKey
 	if len(cfg.Cliproxy.APIKeys) > 0 {
 		key = cfg.Cliproxy.APIKeys[0]
@@ -90,10 +91,30 @@ func (a *App) apiConfigSave(w http.ResponseWriter, r *http.Request) {
 	if fresh.Cliproxy.ManagementSecret == "" {
 		fresh.Cliproxy.ManagementSecret = prev.Cliproxy.ManagementSecret
 	}
+	// The session (login) and its verification time are owned by the auth
+	// flow, never by a UI save.
+	fresh.Auth = prev.Auth
 	config.Normalize(fresh)
+	// A changed gateway key replaces the old one among the engine's client
+	// keys (otherwise the new key gets 401 and the old one keeps working).
+	var retire []string
+	if prev.APIKey != "" && fresh.APIKey != prev.APIKey {
+		retire = append(retire, prev.APIKey)
+		keys := []string{fresh.APIKey}
+		for _, k := range fresh.Cliproxy.APIKeys {
+			if k != prev.APIKey && k != fresh.APIKey {
+				keys = append(keys, k)
+			}
+		}
+		fresh.Cliproxy.APIKeys = keys
+	}
+	portChanged := fresh.Cliproxy.Port != prev.Cliproxy.Port || fresh.Cliproxy.Host != prev.Cliproxy.Host
+	if portChanged {
+		a.SetSessionPort(0) // an explicit port choice ends any temporary one
+	}
 	// Sync the engine config first: it may fail on bad extra YAML, and it
 	// merges engine-side api-keys into fresh before it is persisted.
-	if err := a.SyncYAML(fresh); err != nil {
+	if err := a.SyncYAML(fresh, retire...); err != nil {
 		jsonWrite(w, http.StatusBadRequest, anyMap{"ok": false, "error": err.Error()})
 		return
 	}
@@ -101,9 +122,11 @@ func (a *App) apiConfigSave(w http.ResponseWriter, r *http.Request) {
 		jsonWrite(w, http.StatusInternalServerError, anyMap{"ok": false, "error": err.Error()})
 		return
 	}
+	if len(retire) > 0 && fresh.RequireKey {
+		_, _, _ = a.mgmtRequest(http.MethodPut, "/v0/management/api-keys", mustJSON(fresh.Cliproxy.APIKeys))
+	}
 	a.SetConfig(fresh)
-	needsRestart := fresh.Cliproxy.Port != prev.Cliproxy.Port || fresh.Cliproxy.Host != prev.Cliproxy.Host
-	jsonWrite(w, http.StatusOK, anyMap{"ok": true, "needsRestart": needsRestart, "port": fresh.Cliproxy.Port})
+	jsonWrite(w, http.StatusOK, anyMap{"ok": true, "needsRestart": portChanged, "port": fresh.Cliproxy.Port})
 }
 
 // snapshotConfig returns the current config pointer.

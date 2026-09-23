@@ -25,7 +25,7 @@ func TestResolveModelName(t *testing.T) {
 		{"claude-haiku-4-5", "claude-haiku-4-5"},                         // no haiku tier → unchanged
 		{"", "gemini-3-flash"},                                           // empty → default
 		{"*", "gemini-3-flash"},                                          // generic → default
-		{"gpt-4o", "gpt-4o"},                                             // unrelated name passes through
+		{"gpt-4o", "gpt-4o"},                                             // unrelated name passes through (no catalog)
 		{"claude-fable-5-dd-6-4-tennos-edualc", "gemini-3.8-flash-high"}, // cloaked sonnet → tier
 	}
 	for _, c := range cases {
@@ -35,68 +35,99 @@ func TestResolveModelName(t *testing.T) {
 	}
 }
 
-func TestMultiClientTiersAndUnmappedStrategy(t *testing.T) {
+func TestUniversalTiersExactAliasesOnly(t *testing.T) {
 	cfg := config.Defaults()
-	// Cursor tiers
-	cfg.Routing.Tiers.CursorSmall = "provider:gemini-3.8-flash"
-	cfg.Routing.Tiers.CursorSonnet = "anthropic:claude-3-7-sonnet"
-	cfg.Routing.Tiers.CursorPrimary = "openai:gpt-4o"
-
-	// Codex tiers
-	cfg.Routing.Tiers.CodexMini = "openrouter:gpt-4o-mini"
-	cfg.Routing.Tiers.CodexSmart = "openai:gpt-4o"
-	cfg.Routing.Tiers.CodexReason = "openai:o3-mini"
-
-	// Windsurf tiers
-	cfg.Routing.Tiers.WindsurfFast = "gemini-3.7-flash"
-	cfg.Routing.Tiers.WindsurfBase = "claude-3-5-sonnet"
-	cfg.Routing.Tiers.WindsurfAdv = "claude-3-7-sonnet"
-
-	cfg.Routing.DefaultModel = "fallback-default-model"
-
-	// Test Cursor matches
-	if got := resolveModelName(cfg, "cursor-small"); got != "gemini-3.8-flash" {
-		t.Errorf("expected cursor-small -> gemini-3.8-flash, got %s", got)
-	}
-	if got := resolveModelName(cfg, "cursor-sonnet"); got != "claude-3-7-sonnet" {
-		t.Errorf("expected cursor-sonnet -> claude-3-7-sonnet, got %s", got)
-	}
-	if got := resolveModelName(cfg, "cursor-primary"); got != "gpt-4o" {
-		t.Errorf("expected cursor-primary -> gpt-4o, got %s", got)
-	}
-
-	// Test Codex matches
-	if got := resolveModelName(cfg, "codex-mini"); got != "gpt-4o-mini" {
-		t.Errorf("expected codex-mini -> gpt-4o-mini, got %s", got)
-	}
-	if got := resolveModelName(cfg, "codex-smart"); got != "gpt-4o" {
-		t.Errorf("expected codex-smart -> gpt-4o, got %s", got)
-	}
-	if got := resolveModelName(cfg, "codex-reason"); got != "o3-mini" {
-		t.Errorf("expected codex-reason -> o3-mini, got %s", got)
-	}
-
-	// Test Windsurf matches
-	if got := resolveModelName(cfg, "cascade-fast"); got != "gemini-3.7-flash" {
-		t.Errorf("expected cascade-fast -> gemini-3.7-flash, got %s", got)
-	}
-	if got := resolveModelName(cfg, "cascade-base"); got != "claude-3-5-sonnet" {
-		t.Errorf("expected cascade-base -> claude-3-5-sonnet, got %s", got)
-	}
-	if got := resolveModelName(cfg, "cascade-advanced"); got != "claude-3-7-sonnet" {
-		t.Errorf("expected cascade-advanced -> claude-3-7-sonnet, got %s", got)
-	}
-
-	// Test UnmappedStrategy: passthrough
+	cfg.Routing.Tiers.Fast = "provider:gemini-3.8-flash"
+	cfg.Routing.Tiers.Main = "claude-sonnet-4-6"
+	cfg.Routing.Tiers.Max = "openai:o3-mini"
 	cfg.Routing.UnmappedStrategy = "passthrough"
-	if got := resolveModelName(cfg, "custom-unmapped-model"); got != "custom-unmapped-model" {
-		t.Errorf("expected passthrough, got %s", got)
+	cases := []struct{ in, want string }{
+		{"cartelink-fast", "gemini-3.8-flash"},
+		{"cursor-small", "gemini-3.8-flash"}, // legacy alias
+		{"codex-mini", "gemini-3.8-flash"},
+		{"cartelink-main", "claude-sonnet-4-6"},
+		{"codex-smart", "claude-sonnet-4-6"},
+		{"cascade-base", "claude-sonnet-4-6"},
+		{"cartelink-max", "o3-mini"},
+		{"cascade-advanced", "o3-mini"},
+		// Regressions from 2.2.0: substring rules hijacked real models.
+		{"gemini-3.8-flash-high", "gemini-3.8-flash-high"}, // "gemini" contains "mini"
+		{"gpt-4o-mini", "gpt-4o-mini"},
+		{"grok-4-fast", "grok-4-fast"},
+		{"o3-pro", "o3-pro"},
+		{"deepseek-reasoner", "deepseek-reasoner"},
+		{"my-small-model", "my-small-model"},
 	}
+	for _, c := range cases {
+		if got := resolveModelName(cfg, c.in); got != c.want {
+			t.Errorf("resolveModelName(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
 
-	// Test UnmappedStrategy: fallback
-	cfg.Routing.UnmappedStrategy = "fallback"
-	if got := resolveModelName(cfg, "custom-unmapped-model"); got != "fallback-default-model" {
-		t.Errorf("expected fallback-default-model, got %s", got)
+func TestLegacyTierFieldsFolded(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Routing.Tiers.CodexMini = "gpt-4o-mini"
+	cfg.Routing.Tiers.CursorPrimary = "claude-sonnet-4-6"
+	cfg.Routing.Tiers.WindsurfAdv = "o3"
+	config.Normalize(cfg)
+	tr := cfg.Routing.Tiers
+	if tr.Fast != "gpt-4o-mini" || tr.Main != "claude-sonnet-4-6" || tr.Max != "o3" || tr.CodexMini != "" {
+		t.Fatalf("legacy tiers not folded: %+v", tr)
+	}
+}
+
+func TestTableMode(t *testing.T) {
+	cfg := routingCfg()
+	cfg.Routing.Mode = "table"
+	cfg.Routing.UnmappedStrategy = "passthrough"
+	cfg.Routing.ModelMap["gpt-4o"] = "gemini-3-flash"
+	cfg.Routing.ModelMap["claude-*"] = "kimi-k2.8-code"
+	cases := []struct{ in, want string }{
+		{"gpt-4o", "gemini-3-flash"},
+		{"GPT-4o", "gemini-3-flash"},          // case-insensitive
+		{"claude-sonnet-5", "kimi-k2.8-code"}, // exact entry
+		{"claude-opus-4-8", "kimi-k2.8-code"}, // wildcard; tiers are off in table mode
+		{"gemini-2.5-pro", "gemini-2.5-pro"},  // unmapped → passthrough
+	}
+	for _, c := range cases {
+		if got := resolveModelName(cfg, c.in); got != c.want {
+			t.Errorf("table resolve(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestUnmappedStrategies(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Routing.DefaultModel = "prov:fallback-model"
+	known := func(m string) bool { return m == "served-model" }
+
+	cfg.Routing.UnmappedStrategy = "smart"
+	if got := resolveModel(cfg, "served-model", known); got != "served-model" {
+		t.Errorf("smart: served model rewritten to %q", got)
+	}
+	if got := resolveModel(cfg, "gpt-4o", known); got != "fallback-model" {
+		t.Errorf("smart: unknown model = %q, want fallback-model", got)
+	}
+	if got := resolveModel(cfg, "gpt-4o", nil); got != "gpt-4o" {
+		t.Errorf("smart without catalog must pass through, got %q", got)
+	}
+	cfg.Routing.UnmappedStrategy = "always"
+	if got := resolveModel(cfg, "served-model", known); got != "fallback-model" {
+		t.Errorf("always: got %q", got)
+	}
+	cfg.Routing.UnmappedStrategy = "passthrough"
+	if got := resolveModel(cfg, "gpt-4o", known); got != "gpt-4o" {
+		t.Errorf("passthrough: got %q", got)
+	}
+	// Legacy values normalise to smart.
+	for _, legacy := range []string{"default", "fallback", "default_model", ""} {
+		c := config.Defaults()
+		c.Routing.UnmappedStrategy = legacy
+		config.Normalize(c)
+		if c.Routing.UnmappedStrategy != "smart" {
+			t.Errorf("legacy %q → %q, want smart", legacy, c.Routing.UnmappedStrategy)
+		}
 	}
 }
 

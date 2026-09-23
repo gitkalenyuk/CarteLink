@@ -40,6 +40,7 @@ type MetricsState struct {
 // MetricsStore manages thread-safe access and persistence for usage metrics.
 type MetricsStore struct {
 	mu       sync.RWMutex
+	saveMu   sync.Mutex
 	filePath string
 	state    MetricsState
 }
@@ -79,16 +80,17 @@ func (ms *MetricsStore) load() {
 
 // Save persists the current state to disk.
 func (ms *MetricsStore) Save() error {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
-
-	_ = os.MkdirAll(filepath.Dir(ms.filePath), 0o755)
+	ms.mu.Lock()
 	ms.state.LastUpdated = time.Now()
-	data, err := json.MarshalIndent(ms.state, "", "  ")
+	data, err := json.Marshal(ms.state)
+	ms.mu.Unlock()
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(ms.filePath, data, 0o644)
+	ms.saveMu.Lock()
+	defer ms.saveMu.Unlock()
+	_ = os.MkdirAll(filepath.Dir(ms.filePath), 0o755)
+	return config.WriteFileAtomic(ms.filePath, data)
 }
 
 // Ingest adds newly popped records from the usage-queue.
@@ -149,8 +151,12 @@ func (ms *MetricsStore) Ingest(records []map[string]any) {
 		}
 	}
 
-	// Prepend newest records to history, bounded to 1000 items
-	newHistory := append(records, ms.state.History...)
+	// Prepend newest records to history (newest first), bounded to 1000 items.
+	newHistory := make([]map[string]any, 0, len(records)+len(ms.state.History))
+	for i := len(records) - 1; i >= 0; i-- {
+		newHistory = append(newHistory, records[i])
+	}
+	newHistory = append(newHistory, ms.state.History...)
 	if len(newHistory) > 1000 {
 		newHistory = newHistory[:1000]
 	}

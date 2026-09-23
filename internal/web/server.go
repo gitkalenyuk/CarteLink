@@ -1,14 +1,12 @@
-// Package web serves the CartelGate UI and control API:
+// Package web serves the CarteLink UI and control API:
 // the Electron main process's IPC surface: config get/save, providers CRUD,
 // metrics, OAuth pass-through to the embedded CLIProxyAPI Management API.
 // In the embedded build the same CLIProxyAPI server hosts these routes.
 package web
 
 import (
-	"bytes"
 	"context"
 	"embed"
-	"fmt"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -63,6 +61,11 @@ type App struct {
 	loopbackSrv   *http.Server
 	loopbackNonce string
 	metricsStore  *MetricsStore
+	// sessionPort overrides the configured port for this run only.
+	sessionPort int
+	showFn      func()
+	knownModels map[string]bool
+	knownAt     time.Time
 }
 
 // NewApp builds the app around the config. The embedded service reference is
@@ -174,10 +177,13 @@ func EngineCfgPath() string { return filepath.Join(config.CliproxyDir(), "config
 // were added to the engine through the Management API (they live only in
 // config.yaml) are merged into cfg.Cliproxy.APIKeys so the two files agree;
 // the caller is expected to Save() cfg afterwards.
-func (a *App) SyncYAML(cfg *config.Config) error {
+func (a *App) SyncYAML(cfg *config.Config, retire ...string) error {
 	path := EngineCfgPath()
 	if cfg.RequireKey {
 		seen := map[string]bool{}
+		for _, k := range retire {
+			seen[k] = true
+		}
 		merged := make([]string, 0, len(cfg.Cliproxy.APIKeys)+2)
 		for _, k := range append(append([]string{}, cfg.Cliproxy.APIKeys...), cliproxy.ReadAPIKeys(path)...) {
 			if k == "" || k == "cg-default-key" || k == "vg-cliproxy-default-key" || seen[k] {
@@ -191,9 +197,15 @@ func (a *App) SyncYAML(cfg *config.Config) error {
 		}
 		cfg.Cliproxy.APIKeys = merged
 	}
+	port := cfg.Cliproxy.Port
+	a.mu.Lock()
+	if a.sessionPort > 0 {
+		port = a.sessionPort
+	}
+	a.mu.Unlock()
 	return cliproxy.SyncConfigYAML(path, cliproxy.Managed{
 		Host:       cfg.Cliproxy.Host,
-		Port:       cfg.Cliproxy.Port,
+		Port:       port,
 		Secret:     cfg.Cliproxy.ManagementSecret,
 		AuthDir:    config.CliproxyAuthDir(),
 		APIKeys:    cfg.Cliproxy.APIKeys,
@@ -286,287 +298,133 @@ func ControlHandler(a *App) http.Handler {
 	return http.HandlerFunc(a.controlRoot)
 }
 
-// IsAuthenticated reports whether the user is authorized to use CarteLink.
-func (a *App) IsAuthenticated() bool {
-	a.mu.Lock()
-	enabled := a.cfg.Auth.Enabled
-	a.mu.Unlock()
-	if !enabled {
-		return true
-	}
-	a.authMu.Lock()
-	defer a.authMu.Unlock()
-	return a.authStatus == "authorized"
-}
-
-// AuthStatus returns the current Telegram authentication state.
-func (a *App) AuthStatus() (status string, reason string, user *config.AuthUser, brokerUrl string, enabled bool) {
-	a.mu.Lock()
-	enabled = a.cfg.Auth.Enabled
-	brokerUrl = a.cfg.Auth.BrokerURL
-	a.mu.Unlock()
-
-	a.authMu.Lock()
-	defer a.authMu.Unlock()
-	status = a.authStatus
-	reason = a.authReason
-	user = a.authUser
-	return
-}
-
-// SetAuthSession updates in-memory and persisted auth session.
-func (a *App) SetAuthSession(session string, user *config.AuthUser) {
-	a.authMu.Lock()
-	a.authSession = session
-	a.authUser = user
-	a.authStatus = "authorized"
-	a.authReason = ""
-	a.authMu.Unlock()
-
-	a.mu.Lock()
-	a.cfg.Auth.Session = session
-	a.cfg.Auth.User = user
-	_ = a.cfg.Save()
-	a.mu.Unlock()
-}
-
-// InitAuth initializes auth state on startup.
-func (a *App) InitAuth() {
-	a.mu.Lock()
-	cfg := a.cfg
-	a.mu.Unlock()
-
-	if !cfg.Auth.Enabled {
-		a.authMu.Lock()
-		a.authStatus = "authorized"
-		a.authMu.Unlock()
-		return
-	}
-
-	if cfg.Auth.Session == "" {
-		a.authMu.Lock()
-		a.authStatus = "need_login"
-		a.authMu.Unlock()
-		return
-	}
-
-	a.authMu.Lock()
-	a.authSession = cfg.Auth.Session
-	a.authUser = cfg.Auth.User
-	a.authStatus = "authorized"
-	a.authMu.Unlock()
-
-	// Asynchronously verify live membership
-	go func() {
-		a.VerifyAuthLive()
-	}()
-}
-
-// VerifyAuthLive verifies membership with the hosted broker.
-func (a *App) VerifyAuthLive() bool {
-	a.mu.Lock()
-	brokerUrl := a.cfg.Auth.BrokerURL
-	if brokerUrl == "" {
-		brokerUrl = config.DefaultBrokerURL
-	}
-	enabled := a.cfg.Auth.Enabled
-	a.mu.Unlock()
-
-	if !enabled {
-		a.authMu.Lock()
-		a.authStatus = "authorized"
-		a.authMu.Unlock()
-		return true
-	}
-
-	a.authMu.Lock()
-	session := a.authSession
-	a.authMu.Unlock()
-
-	if session == "" {
-		a.authMu.Lock()
-		a.authStatus = "need_login"
-		a.authMu.Unlock()
-		return false
-	}
-
-	client := &http.Client{Timeout: 15 * time.Second}
-	payload, _ := json.Marshal(map[string]any{
-		"initData": "",
-		"app":      true,
-		"session":  session,
-	})
-	verifyURL := strings.TrimRight(brokerUrl, "/") + "/api/auth/verify"
-
-	req, err := http.NewRequest(http.MethodPost, verifyURL, bytes.NewReader(payload))
-	if err != nil {
-		return true
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Cookie", "ytc_session="+session)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Println("[CarteLink auth] verify network blip:", err)
-		return true
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		OK     bool   `json:"ok"`
-		Reason string `json:"reason"`
-		Tier   string `json:"tier"`
-		User   *struct {
-			ID        any    `json:"id"`
-			FirstName string `json:"first_name"`
-			LastName  string `json:"last_name"`
-			Name      string `json:"name"`
-			Username  string `json:"username"`
-		} `json:"user"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		log.Println("[CarteLink auth] decode verify error:", err)
-		return true
-	}
-
-	a.authMu.Lock()
-	defer a.authMu.Unlock()
-	if result.OK {
-		a.authStatus = "authorized"
-		a.authReason = ""
-		if result.User != nil {
-			displayName := result.User.FirstName
-			if result.User.LastName != "" {
-				displayName += " " + result.User.LastName
-			} else if displayName == "" {
-				displayName = result.User.Name
-			}
-			userObj := &config.AuthUser{
-				ID:       "",
-				Name:     displayName,
-				Username: result.User.Username,
-			}
-			if result.User.ID != nil {
-				userObj.ID = strings.TrimSpace(bytes.NewBufferString("").String() + anyToString(result.User.ID))
-			}
-			a.authUser = userObj
-			a.mu.Lock()
-			a.cfg.Auth.User = userObj
-			_ = a.cfg.Save()
-			a.mu.Unlock()
-		}
-		return true
-	}
-
-	if result.Reason == "not_member" || result.Reason == "trial_expired" {
-		a.authStatus = "denied"
-		a.authReason = "not_member"
-		log.Println("[CarteLink auth] access revoked: user is not a member of Secret YT_cartel 🧠")
-		return false
-	}
-
-	a.authStatus = "need_login"
-	a.authReason = result.Reason
-	return false
-}
-
-// StartAuthWatchdog runs a 5-minute background live membership re-check.
-func (a *App) StartAuthWatchdog() {
-	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
-		defer ticker.Stop()
-		for range ticker.C {
-			a.mu.Lock()
-			enabled := a.cfg.Auth.Enabled
-			a.mu.Unlock()
-			if enabled {
-				a.VerifyAuthLive()
-			}
-		}
-	}()
-}
-
-
-func anyToString(v any) string {
-	if v == nil {
-		return ""
-	}
-	return fmt.Sprint(v)
-}
-
-
 // MetricsStore returns the metrics store instance.
 func (a *App) MetricsStore() *MetricsStore {
 	return a.metricsStore
 }
 
-// ActiveModels collects all model IDs available from OAuth accounts and custom providers.
-func (a *App) ActiveModels() []string {
-	modelsMap := make(map[string]bool)
+// SetSessionPort records a port used for this run only (the configured one
+// was busy). It is never saved; config.yaml gets it so the engine binds it.
+func (a *App) SetSessionPort(p int) {
+	a.mu.Lock()
+	a.sessionPort = p
+	a.mu.Unlock()
+}
 
+// EffectivePort is the port the engine listens on right now.
+func (a *App) EffectivePort() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.sessionPort > 0 {
+		return a.sessionPort
+	}
+	return a.cfg.Cliproxy.Port
+}
+
+// SetShowHandler sets what "show the app" does (window or browser).
+func (a *App) SetShowHandler(f func()) {
+	a.mu.Lock()
+	a.showFn = f
+	a.mu.Unlock()
+}
+
+// StartModelCatalog keeps a cached list of the models the engine serves; it
+// powers the "smart" unmapped-model fallback (see IsKnownModel).
+func (a *App) StartModelCatalog() {
+	go func() {
+		for {
+			a.refreshModelCatalog()
+			time.Sleep(60 * time.Second)
+		}
+	}()
+}
+
+func (a *App) refreshModelCatalog() {
+	if !a.EngineRunning() || !a.IsAuthenticated() {
+		return
+	}
 	cfg := a.snapshotConfig()
+	req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1:"+itoa(a.EffectivePort())+"/v1/models", nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("X-CarteLink-Internal", "1")
+	key := cfg.APIKey
+	if len(cfg.Cliproxy.APIKeys) > 0 {
+		key = cfg.Cliproxy.APIKeys[0]
+	}
+	if key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+	var body struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&body) != nil {
+		return
+	}
+	set := make(map[string]bool, len(body.Data))
+	for _, m := range body.Data {
+		if id := strings.ToLower(strings.TrimSpace(uncloak(m.ID))); id != "" {
+			set[id] = true
+		}
+	}
+	a.mu.Lock()
+	a.knownModels = set
+	a.knownAt = time.Now()
+	a.mu.Unlock()
+}
+
+// IsKnownModel reports whether the engine (or an enabled provider) serves
+// model. With no catalog yet it answers true, so nothing is rerouted blindly.
+func (a *App) IsKnownModel(model string) bool {
+	m := strings.ToLower(strings.TrimSpace(model))
+	a.mu.Lock()
+	set, cfg := a.knownModels, a.cfg
+	a.mu.Unlock()
+	if len(set) == 0 {
+		return true
+	}
+	if set[m] {
+		return true
+	}
 	for _, p := range cfg.Providers {
-		for _, m := range p.Models {
-			m = strings.TrimSpace(m)
-			if m != "" {
-				modelsMap[m] = true
+		if !p.Enabled {
+			continue
+		}
+		for _, pm := range p.Models {
+			if strings.EqualFold(strings.TrimSpace(pm), m) {
+				return true
 			}
 		}
 	}
+	return false
+}
 
-	if a.EngineRunning() && !a.Paused() {
-		status, raw, _ := a.mgmtRequest(http.MethodGet, "/v0/management/auth-files", nil)
-		if status == http.StatusOK {
-			var afData struct {
-				Files []struct {
-					Models []any `json:"models"`
-				} `json:"files"`
-			}
-			if json.Unmarshal(raw, &afData) == nil {
-				for _, f := range afData.Files {
-					for _, m := range f.Models {
-						switch mv := m.(type) {
-						case string:
-							if strings.TrimSpace(mv) != "" {
-								modelsMap[strings.TrimSpace(mv)] = true
-							}
-						case map[string]any:
-							if id, ok := mv["id"].(string); ok && strings.TrimSpace(id) != "" {
-								modelsMap[strings.TrimSpace(id)] = true
-							} else if name, ok := mv["name"].(string); ok && strings.TrimSpace(name) != "" {
-								modelsMap[strings.TrimSpace(name)] = true
-							}
-						}
-					}
-				}
-			}
-		}
-
-		status, raw, _ = a.mgmtRequest(http.MethodGet, "/v0/management/openai-compatibility", nil)
-		if status == http.StatusOK {
-			var ocData []struct {
-				Models []string `json:"models"`
-			}
-			if json.Unmarshal(raw, &ocData) == nil {
-				for _, oc := range ocData {
-					for _, m := range oc.Models {
-						m = strings.TrimSpace(m)
-						if m != "" {
-							modelsMap[m] = true
-						}
-					}
-				}
-			}
-		}
+// uncloak reverses the engine's claude-fable-5-dd-<reversed> cloaking.
+func uncloak(id string) string {
+	const prefix = "claude-fable-5-dd-"
+	if !strings.HasPrefix(id, prefix) {
+		return id
 	}
-
-	if len(modelsMap) == 0 {
-		return []string{"claude-3-5-sonnet", "gpt-4o", "gemini-2.0-flash"}
+	base := id[len(prefix):]
+	suffix := ""
+	if open := strings.LastIndex(base, "("); open != -1 && strings.HasSuffix(base, ")") {
+		suffix = base[open:]
+		base = base[:open]
 	}
-
-	res := make([]string, 0, len(modelsMap))
-	for m := range modelsMap {
-		res = append(res, m)
+	r := []rune(base)
+	for i, j := 0, len(r)-1; i < j; i, j = i+1, j-1 {
+		r[i], r[j] = r[j], r[i]
 	}
-	return res
+	return string(r) + suffix
 }
