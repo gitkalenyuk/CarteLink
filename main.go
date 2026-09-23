@@ -71,9 +71,6 @@ func main() {
 	if err != nil {
 		configWarning = "config.json був пошкоджений і замінений на налаштування за замовчуванням.\n\n" + err.Error()
 	}
-	if *portOverride > 0 {
-		cfg.Cliproxy.Port = *portOverride
-	}
 
 	// Redirect stdout/stderr into a log file when there is no console
 	// (the -H=windowsgui build, or a macOS .app). gin writers are re-pointed
@@ -109,9 +106,13 @@ func main() {
 	// The port is fixed (clients are configured for it). If something else
 	// holds it, run on the next free one for this session only — never save
 	// it, so the next start goes back to the configured port.
+	// --port is a one-run override as well: never written to config.json.
+	if *portOverride > 0 {
+		app.SetSessionPort(*portOverride)
+	}
 	movedFrom := 0
-	if p, changed := pickFreePort(cfg.Cliproxy.Host, cfg.Cliproxy.Port); changed {
-		movedFrom = cfg.Cliproxy.Port
+	if p, changed := pickFreePort(cfg.Cliproxy.Host, app.EffectivePort()); changed {
+		movedFrom = app.EffectivePort()
 		log.Printf("port %d busy — CarteLink uses %d for this session (not saved)", movedFrom, p)
 		app.SetSessionPort(p)
 	}
