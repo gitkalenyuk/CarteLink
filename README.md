@@ -102,10 +102,14 @@ bash scripts/build-mac-app.sh
 ```
 
 Produces `dist/CarteLink.app` (universal arm64 + x86_64, native window, ad-hoc signed) and
-`dist/CarteLink-<version>.dmg` to hand out. Without the Command Line Tools
-`bash scripts/mac-setup.sh` still builds `./cartelink`, which opens the UI in the browser.
+three `.dmg` to hand out: `CarteLink-<version>.dmg` (universal), `…-apple-silicon.dmg`
+(arm64) and `…-intel.dmg` (x86_64). The app needs macOS 13 Ventura or later (Go 1.27).
+Without the Command Line Tools `bash scripts/mac-setup.sh` still builds `./cartelink`,
+which opens the UI in the browser.
 
-First launch on another Mac: right-click the app → «Відкрити» (the build is not notarized).
+Installing (the build is not notarized, so the first launch needs a Gatekeeper
+permission): [`INSTALL-MACOS.md`](INSTALL-MACOS.md) for people,
+[`INSTALL-MACOS-AI.md`](INSTALL-MACOS-AI.md) as a prompt for an AI agent.
 
 ## Tests
 
