@@ -38,6 +38,13 @@ const mgmtTimeout = 20 * time.Second
 // mgmtRequest performs an authenticated management API call against the
 // embedded engine on 127.0.0.1:<port>.
 func (a *App) mgmtRequest(method, path string, body []byte) (int, []byte, string) {
+	return a.mgmtRequestType(method, path, body, "application/json")
+}
+
+// mgmtRequestType is mgmtRequest with an explicit request Content-Type
+// (multipart uploads such as the Vertex key import) and a longer timeout for
+// plugin installs, which download from GitHub.
+func (a *App) mgmtRequestType(method, path string, body []byte, ctype string) (int, []byte, string) {
 	if a.Paused() || !a.EngineRunning() {
 		errJSON := []byte(`{"ok":false,"error":"Рушій зупинено. Натисніть кнопку 'Запустити' вгорі панелі."}`)
 		return http.StatusServiceUnavailable, errJSON, "application/json"
@@ -56,9 +63,16 @@ func (a *App) mgmtRequest(method, path string, body []byte) (int, []byte, string
 	req.Header.Set("X-Management-Key", cfg.Cliproxy.ManagementSecret)
 	req.Header.Set("Accept", "application/json, application/yaml, text/plain, */*")
 	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+		if ctype == "" {
+			ctype = "application/json"
+		}
+		req.Header.Set("Content-Type", ctype)
 	}
-	client := &http.Client{Timeout: mgmtTimeout}
+	timeout := mgmtTimeout
+	if strings.Contains(path, "/plugin-store/") {
+		timeout = 3 * time.Minute
+	}
+	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		errJSON := []byte(fmt.Sprintf(`{"ok":false,"error":"Помилка звʼязку з рушієм: %s"}`, err.Error()))
@@ -66,11 +80,11 @@ func (a *App) mgmtRequest(method, path string, body []byte) (int, []byte, string
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
-	ctype := resp.Header.Get("Content-Type")
-	if ctype == "" {
-		ctype = "application/json"
+	respType := resp.Header.Get("Content-Type")
+	if respType == "" {
+		respType = "application/json"
 	}
-	return resp.StatusCode, raw, ctype
+	return resp.StatusCode, raw, respType
 }
 
 // writeMgmtResult forwards a management response to the UI caller.
@@ -105,7 +119,7 @@ func (a *App) apiClipApi(w http.ResponseWriter, r *http.Request) {
 	if r.URL.RawQuery != "" {
 		path += "?" + r.URL.RawQuery
 	}
-	status, raw, ctype := a.mgmtRequest(r.Method, path, body)
+	status, raw, ctype := a.mgmtRequestType(r.Method, path, body, r.Header.Get("Content-Type"))
 	writeMgmtResult(w, status, raw, ctype)
 }
 
@@ -131,6 +145,19 @@ func (a *App) apiClipOauthStart(w http.ResponseWriter, r *http.Request) {
 			Error string `json:"error"`
 		}
 		if json.Unmarshal(raw, &parsed) == nil && parsed.URL != "" {
+			// Plugin logins may answer with a path on the engine itself
+			// (e.g. /v0/resource/plugins/mirasim/...): make it absolute.
+			if strings.HasPrefix(parsed.URL, "/") {
+				cfg := a.snapshotConfig()
+				parsed.URL = "http://" + net.JoinHostPort(config.DisplayHost(cfg.Cliproxy.Host), strconv.Itoa(a.EffectivePort())) + parsed.URL
+				var full map[string]any
+				if json.Unmarshal(raw, &full) == nil {
+					full["url"] = parsed.URL
+					if b, err := json.Marshal(full); err == nil {
+						raw = b
+					}
+				}
+			}
 			cmd := openCleanBrowser(parsed.URL)
 			if cmd != nil {
 				a.SetOAuthBrowserCmd(cmd)

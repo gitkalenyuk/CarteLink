@@ -94,6 +94,9 @@ func (a *App) apiConfigSave(w http.ResponseWriter, r *http.Request) {
 	// The session (login) and its verification time are owned by the auth
 	// flow, never by a UI save.
 	fresh.Auth = prev.Auth
+	// Window/switcher/language settings have their own endpoints; a config
+	// save from a page loaded earlier must not roll them back.
+	fresh.Desktop = prev.Desktop
 	config.Normalize(fresh)
 	// A changed gateway key replaces the old one among the engine's client
 	// keys (otherwise the new key gets 401 and the old one keeps working).

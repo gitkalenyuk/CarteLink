@@ -59,6 +59,24 @@ func (a *App) control(w http.ResponseWriter, r *http.Request, path string) {
 		a.apiAppSettingsPut(w, r)
 	case path == "/account-provider/hide" && r.Method == http.MethodPost:
 		a.apiAccountProviderHide(w, r)
+	case path == "/routing/apply-all" && r.Method == http.MethodPost:
+		a.apiRoutingApplyAll(w, r)
+	case path == "/switcher" && r.Method == http.MethodGet:
+		a.apiSwitcherGet(w, r)
+	case path == "/switcher" && r.Method == http.MethodPut:
+		a.apiSwitcherPut(w, r)
+	case path == "/switcher/switch" && r.Method == http.MethodPost:
+		a.apiSwitcherSwitch(w, r)
+	case path == "/model-info" && r.Method == http.MethodGet:
+		a.apiModelInfo(w, r)
+	case path == "/model-context" && r.Method == http.MethodGet:
+		a.apiModelContext(w, r)
+	case path == "/engine-models" && r.Method == http.MethodGet:
+		jsonWrite(w, http.StatusOK, anyMap{"ok": true, "models": a.EngineModels()})
+	case path == "/errors" && r.Method == http.MethodGet:
+		a.apiErrorsGet(w, r)
+	case path == "/errors/clear" && r.Method == http.MethodPost:
+		a.apiErrorsClear(w, r)
 	case path == "/metrics" && r.Method == http.MethodGet:
 		a.apiMetricsGet(w, r)
 	case path == "/metrics/clear" && r.Method == http.MethodPost:

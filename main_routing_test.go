@@ -171,3 +171,70 @@ func TestSameOriginRequest(t *testing.T) {
 		}
 	}
 }
+
+func TestClaudePickerEntries(t *testing.T) {
+	cfg := config.Defaults()
+	if got := claudePickerEntries(cfg, nil); len(got) != 0 {
+		t.Fatalf("no main model -> no entries, got %+v", got)
+	}
+	cfg.Routing.ApplyAll("gemini-3.8-flash-high")
+	got := claudePickerEntries(cfg, nil)
+	if len(got) != 1 || got[0].ID != "claude-cartelink-main" || got[0].DisplayName != "CarteLink: gemini-3.8-flash-high" {
+		t.Fatalf("one model everywhere -> only main entry, got %+v", got)
+	}
+	cfg.Routing.Tiers.Max = "claude-opus-5-5"
+	if got := claudePickerEntries(cfg, nil); len(got) != 2 || got[1].ID != "claude-cartelink-max" {
+		t.Fatalf("different max tier -> extra entry, got %+v", got)
+	}
+	if m := resolveModelName(cfg, "claude-cartelink-main"); m != "gemini-3.8-flash-high" {
+		t.Fatalf("claude-cartelink-main resolves to %q", m)
+	}
+}
+
+func TestClaudePickerEntries1M(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Routing.ApplyAll("gemini-3.8-flash-high")
+	cfg.Routing.Tiers.Max = "claude-opus-4-8"
+	ctx := map[string]int{"gemini-3.8-flash-high": 1048576, "claude-opus-4-8": 200000}
+	got := claudePickerEntries(cfg, func(m string) int { return ctx[m] })
+	if len(got) != 2 || got[0].ID != "claude-cartelink-main[1m]" || got[1].ID != "claude-cartelink-max" {
+		t.Fatalf("1M main gets the [1m] id, 200K max does not: %+v", got)
+	}
+	// The marker never reaches the engine.
+	for in, want := range map[string]string{
+		"claude-cartelink-main[1m]": "gemini-3.8-flash-high",
+		"claude-sonnet-5-5[1M]":     "gemini-3.8-flash-high",
+	} {
+		if m := resolveModelName(cfg, in); m != want {
+			t.Errorf("%s -> %q, want %q", in, m, want)
+		}
+	}
+	cfg.Routing.Mode = "table"
+	cfg.Routing.ModelMap = map[string]string{}
+	cfg.Routing.DefaultModel = ""
+	cfg.Routing.UnmappedStrategy = "passthrough"
+	if m := resolveModelName(cfg, "claude-opus-5-5[1m]"); m != "claude-opus-5-5" {
+		t.Errorf("passthrough keeps the marker: %q", m)
+	}
+}
+
+func TestUniversalTiersFollowClaudeTiers(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Routing.Tiers.Sonnet = "gemini-3.8-flash-high"
+	cfg.Routing.Tiers.Opus = "claude-opus-5-5"
+	cfg.Routing.DefaultModel = "gemini-3-flash"
+	cases := map[string]string{
+		"cartelink-main":        "gemini-3.8-flash-high", // main empty → Sonnet
+		"claude-cartelink-main": "gemini-3.8-flash-high",
+		"cartelink-max":         "claude-opus-5-5", // max empty → Opus
+		"cartelink-fast":        "gemini-3-flash",  // fast and Haiku empty → default
+	}
+	for in, want := range cases {
+		if got := resolveModelName(cfg, in); got != want {
+			t.Errorf("%s -> %q, want %q", in, got, want)
+		}
+	}
+	if got := claudePickerEntries(cfg, nil); len(got) != 3 || got[0].DisplayName != "CarteLink: gemini-3.8-flash-high" {
+		t.Fatalf("picker entries: %+v", got)
+	}
+}

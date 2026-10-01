@@ -16,7 +16,7 @@ import (
 )
 
 // Version is the app version reported in /health and the UI.
-const Version = "2.3.0"
+const Version = "2.5.2"
 
 // AppName is the product name used in window titles, logs and messages.
 const AppName = "CarteLink"
@@ -66,6 +66,26 @@ type AuthConfig struct {
 // Desktop holds window/tray preferences (autostart itself lives in the OS).
 type Desktop struct {
 	CloseToTray bool `json:"closeToTray"`
+	// Lang is the UI language code ("uk", "en", …); empty = Ukrainian.
+	Lang     string   `json:"lang,omitempty"`
+	Switcher Switcher `json:"switcher"`
+}
+
+// Switcher is the always-on-top model switcher window: two preset models and
+// which of them is applied right now (1 or 2; 0 = neither yet).
+type Switcher struct {
+	Enabled bool   `json:"enabled"`
+	Model1  string `json:"model1,omitempty"`
+	Model2  string `json:"model2,omitempty"`
+	Active  int    `json:"active,omitempty"`
+	// AutoSwitch: after the first successful request answered by model 1,
+	// everything switches to model 2 by itself (one-shot per activation of
+	// preset 1; switching back to 1 arms it again).
+	AutoSwitch bool `json:"autoSwitch,omitempty"`
+	// autoArmed is persisted so the one-shot survives a restart.
+	AutoArmed bool `json:"autoArmed,omitempty"`
+	// Pos is the last window position (screen pixels); nil = default corner.
+	Pos *[2]int `json:"pos,omitempty"`
 }
 
 // Routing holds the model-mapping rules applied by the gateway middleware.
@@ -86,6 +106,32 @@ type Routing struct {
 	// goes to DefaultModel), "passthrough", or "always" (every unmapped model
 	// goes to DefaultModel).
 	UnmappedStrategy string `json:"unmappedStrategy,omitempty"`
+	// CustomPoints are user-added rows of the "exact swaps" list (mode
+	// "tiers"): a label and the client model name. The target lives in
+	// ModelMap[Model] like the built-in official names.
+	CustomPoints []CustomPoint `json:"customPoints,omitempty"`
+}
+
+// CustomPoint is one user-defined exact swap row.
+type CustomPoint struct {
+	Label string `json:"label"`
+	Model string `json:"model"`
+}
+
+// ApplyAll makes one model answer everything: every tier, the default model
+// and every existing exact swap / table row.
+func (r *Routing) ApplyAll(model string) {
+	model = strings.TrimSpace(model)
+	t := &r.Tiers
+	t.Haiku, t.Sonnet, t.Opus, t.Fast, t.Main, t.Max = model, model, model, model, model, model
+	r.DefaultModel = model
+	r.DefaultProviderID = ""
+	for k := range r.ModelMap {
+		r.ModelMap[k] = model
+	}
+	for _, cp := range r.CustomPoints {
+		r.ModelMap[cp.Model] = model
+	}
 }
 
 // Tiers are the tier targets. The Cursor*/Codex*/Windsurf* fields are legacy
@@ -113,9 +159,9 @@ type Tiers struct {
 // TierAliases lists the exact client model names that select each universal
 // tier. Matching is case-insensitive and exact — never a substring.
 var TierAliases = map[string][]string{
-	"fast": {"cartelink-fast", "cursor-small", "codex-mini", "windsurf-fast", "cascade-fast"},
-	"main": {"cartelink-main", "cursor-sonnet", "cursor-primary", "cursor-default", "codex-smart", "codex-default", "windsurf-base", "cascade-base"},
-	"max":  {"cartelink-max", "codex-reason", "windsurf-adv", "cascade-adv", "cascade-advanced"},
+	"fast": {"cartelink-fast", "claude-cartelink-fast", "cursor-small", "codex-mini", "windsurf-fast", "cascade-fast"},
+	"main": {"cartelink-main", "claude-cartelink-main", "cursor-sonnet", "cursor-primary", "cursor-default", "codex-smart", "codex-default", "windsurf-base", "cascade-base"},
+	"max":  {"cartelink-max", "claude-cartelink-max", "codex-reason", "windsurf-adv", "cascade-adv", "cascade-advanced"},
 }
 
 // Cliproxy is the embedded-engine section: where it listens and its keys.
@@ -140,6 +186,39 @@ type Provider struct {
 	Enabled      bool              `json:"enabled"`
 }
 
+// Prompting injects a system prompt (and an optional AGENT.md) into every
+// model request, and can ask models that support it to think harder.
+type Prompting struct {
+	Enabled bool `json:"enabled"`
+	// Mode: "prepend" (before the client's own prompt, default), "append",
+	// or "replace" (the client's system prompt is dropped).
+	Mode string `json:"mode,omitempty"`
+	Text string `json:"text,omitempty"`
+	// AgentMD is the contents of an AGENT.md-style file, appended after Text.
+	AgentMD        string `json:"agentMd,omitempty"`
+	AgentMDName    string `json:"agentMdName,omitempty"`
+	AgentMDEnabled bool   `json:"agentMdEnabled,omitempty"`
+	// Scope limits injection: "all" (default), "anthropic", "openai".
+	Scope    string   `json:"scope,omitempty"`
+	Thinking Thinking `json:"thinking"`
+}
+
+// Thinking is the reasoning-budget / effort override. It is applied only to
+// models the engine reports as supporting it (see /api/model-info).
+type Thinking struct {
+	Enabled bool `json:"enabled"`
+	// Level: "off" | "low" | "medium" | "high" | "max" | "dynamic".
+	Level string `json:"level,omitempty"`
+	// Budget overrides Level with an explicit token budget (0 = use Level).
+	Budget int `json:"budget,omitempty"`
+	// Override replaces a value the client already sent (default: keep the
+	// client's own choice).
+	Override bool `json:"override,omitempty"`
+}
+
+// ThinkingLevels are the valid Thinking.Level values, weakest first.
+var ThinkingLevels = []string{"off", "low", "medium", "high", "max", "dynamic"}
+
 // Config is the on-disk schema (config.json inside Home()).
 type Config struct {
 	Schema         int        `json:"schema,omitempty"`
@@ -150,6 +229,7 @@ type Config struct {
 	Routing        Routing    `json:"routing"`
 	Cliproxy       Cliproxy   `json:"cliproxy"`
 	ModelBlacklist []string   `json:"modelBlacklist"`
+	Prompting      Prompting  `json:"prompting"`
 	Desktop        Desktop    `json:"desktop"`
 	// HiddenAccounts are account-provider ids the user removed; the Accounts
 	// page must not re-create them automatically.
@@ -265,6 +345,9 @@ func DataDir() string { return filepath.Join(Home(), "data") }
 func CliproxyDir() string     { return filepath.Join(DataDir(), "cliproxy") }
 func CliproxyAuthDir() string { return filepath.Join(CliproxyDir(), "auths") }
 func CliproxyLogsDir() string { return filepath.Join(CliproxyDir(), "logs") }
+
+// CliproxyPluginsDir holds engine plugins installed from the plugin store.
+func CliproxyPluginsDir() string { return filepath.Join(CliproxyDir(), "plugins") }
 
 // ErrCorrupt is wrapped by Load when config.json exists but is not valid
 // JSON. The broken file is moved aside (config.json.corrupt-<time>) and
@@ -383,6 +466,14 @@ func Normalize(c *Config) {
 		c.Routing.UnmappedStrategy = "smart"
 	}
 	foldLegacyTiers(&c.Routing.Tiers)
+	c.Routing.CustomPoints = cleanCustomPoints(c.Routing.CustomPoints)
+	if a := c.Desktop.Switcher.Active; a != 1 && a != 2 {
+		c.Desktop.Switcher.Active = 0
+	}
+	c.Desktop.Switcher.Model1 = strings.TrimSpace(c.Desktop.Switcher.Model1)
+	c.Desktop.Switcher.Model2 = strings.TrimSpace(c.Desktop.Switcher.Model2)
+	c.Desktop.Lang = strings.TrimSpace(c.Desktop.Lang)
+	normPrompting(&c.Prompting)
 	if c.Schema < schemaVersion {
 		// <= 2.2.0 silently saved an auto-moved port (8318...8417) when 8317
 		// was busy; clients stay configured for 8317, so go back to it once.
@@ -423,6 +514,33 @@ func Normalize(c *Config) {
 	if c.RequireKey && len(c.Cliproxy.APIKeys) == 0 && c.APIKey != "" {
 		c.Cliproxy.APIKeys = []string{c.APIKey}
 	}
+}
+
+// normPrompting validates the system-prompt section.
+func normPrompting(p *Prompting) {
+	switch p.Mode {
+	case "append", "replace":
+	default:
+		p.Mode = "prepend"
+	}
+	switch p.Scope {
+	case "anthropic", "openai":
+	default:
+		p.Scope = "all"
+	}
+	valid := false
+	for _, l := range ThinkingLevels {
+		if p.Thinking.Level == l {
+			valid = true
+		}
+	}
+	if !valid {
+		p.Thinking.Level = "medium"
+	}
+	if p.Thinking.Budget < 0 {
+		p.Thinking.Budget = 0
+	}
+	p.AgentMDName = strings.TrimSpace(p.AgentMDName)
 }
 
 // foldLegacyTiers moves the 2.2.0 per-client tier fields into the universal
@@ -474,6 +592,27 @@ func normFormat(f string) string {
 	default:
 		return "openai"
 	}
+}
+
+// cleanCustomPoints trims rows, drops ones without a model name and keeps
+// the first row for each model (case-insensitive).
+func cleanCustomPoints(in []CustomPoint) []CustomPoint {
+	out := make([]CustomPoint, 0, len(in))
+	seen := map[string]bool{}
+	for _, p := range in {
+		p.Model = strings.TrimSpace(p.Model)
+		p.Label = strings.TrimSpace(p.Label)
+		k := strings.ToLower(p.Model)
+		if p.Model == "" || seen[k] {
+			continue
+		}
+		seen[k] = true
+		if p.Label == "" {
+			p.Label = p.Model
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 func cleanStrings(in []string) []string {

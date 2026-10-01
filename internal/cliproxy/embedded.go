@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,7 +28,7 @@ import (
 )
 
 // UpstreamVersion is the version of the embedded CLIProxyAPI source.
-const UpstreamVersion = "7.3.5"
+const UpstreamVersion = "7.3.20"
 
 // Embedded manages the in-process CLIProxyAPI Service lifecycle. It supports
 // Start/Stop/Restart: each Start builds a fresh Service (the old one was
@@ -69,6 +70,10 @@ type Managed struct {
 	APIKeys    []string // written verbatim; nil/empty → "api-keys: []"
 	RequireKey bool
 	ExtraYAML  string // raw YAML appended/merged at top level (advanced users)
+	// PluginsDir enables engine plugins (extra account types from the plugin
+	// store) and keeps them in this absolute directory. plugins.configs is
+	// owned by the engine (install / per-plugin settings) and left untouched.
+	PluginsDir string
 }
 
 // ReadAPIKeys returns the api-keys currently in the on-disk engine config
@@ -85,21 +90,79 @@ func ReadAPIKeys(path string) []string {
 	return stringList(doc["api-keys"])
 }
 
-// SyncConfigYAML merges the managed keys into config.yaml. When the file is
-// missing or unparsable it is regenerated from the template; otherwise the
-// existing document (with whatever the Management API persisted) is kept and
-// only the managed keys are (re)set. The write is skipped when nothing
-// changes so the engine's file watcher is not tickled needlessly.
+// parseYAMLDoc returns the top-level mapping of a config.yaml, or nil when
+// the bytes are empty or not a YAML mapping.
+func parseYAMLDoc(b []byte) map[string]any {
+	if len(strings.TrimSpace(string(b))) == 0 {
+		return nil
+	}
+	var doc map[string]any
+	if yaml.Unmarshal(b, &doc) != nil {
+		return nil
+	}
+	return doc
+}
+
+// BackupConfigYAML copies config.yaml to config.yaml.bak when it parses —
+// the last known good copy. The engine writes config.yaml in place (not
+// atomically), so an app killed mid-write can leave it empty or truncated;
+// SyncConfigYAML then restores from this copy instead of starting over
+// (2.4.0: a truncated file silently lost OpenAI-compatible providers and
+// plugin settings).
+func BackupConfigYAML(path string) {
+	cur, err := os.ReadFile(path)
+	if err != nil || parseYAMLDoc(cur) == nil {
+		return
+	}
+	if old, err := os.ReadFile(path + ".bak"); err == nil && string(old) == string(cur) {
+		return
+	}
+	_ = writeFileAtomic(path+".bak", cur)
+}
+
+func writeFileAtomic(path string, data []byte) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return os.WriteFile(path, data, 0o644)
+	}
+	return nil
+}
+
+// SyncConfigYAML merges the managed keys into config.yaml. The existing
+// document (with whatever the Management API persisted) is kept and only the
+// managed keys are (re)set. An empty or unparsable file is never silently
+// replaced: it is kept as config.yaml.broken-<time> and the last good copy
+// (config.yaml.bak) is used; only without any usable copy does it start from
+// the template. The write is skipped when nothing changes so the engine's
+// file watcher is not tickled needlessly.
 func SyncConfigYAML(path string, m Managed) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 	cur, _ := os.ReadFile(path)
-	var doc map[string]any
-	if len(strings.TrimSpace(string(cur))) == 0 || yaml.Unmarshal(cur, &doc) != nil || doc == nil {
-		// Fresh (or unreadable) file: start from the template defaults and
-		// let the common path below fill in the managed keys, so the output
-		// is byte-stable across syncs.
+	doc := parseYAMLDoc(cur)
+	if doc != nil {
+		BackupConfigYAML(path)
+	} else {
+		if len(strings.TrimSpace(string(cur))) > 0 {
+			broken := path + ".broken-" + time.Now().Format("20060102-150405")
+			_ = os.WriteFile(broken, cur, 0o644)
+			log.Printf("config.yaml is not valid YAML — kept as %s", broken)
+		}
+		if bak, err := os.ReadFile(path + ".bak"); err == nil {
+			if doc = parseYAMLDoc(bak); doc != nil {
+				log.Printf("config.yaml was empty or broken — restored from config.yaml.bak")
+			}
+		}
+	}
+	if doc == nil {
+		// Fresh file: start from the template defaults and let the common
+		// path below fill in the managed keys, so the output is byte-stable
+		// across syncs.
 		doc = map[string]any{
 			"logging-to-file":                     false,
 			"usage-statistics-enabled":            true,
@@ -135,6 +198,15 @@ func SyncConfigYAML(path string, m Managed) error {
 	}
 	cc["disable-cloaking-model-list"] = true
 	doc["claude-code"] = cc
+	if m.PluginsDir != "" {
+		pl, _ := doc["plugins"].(map[string]any)
+		if pl == nil {
+			pl = map[string]any{}
+		}
+		pl["enabled"] = true
+		pl["dir"] = m.PluginsDir
+		doc["plugins"] = pl
+	}
 	if extra := strings.TrimSpace(m.ExtraYAML); extra != "" {
 		var ex map[string]any
 		if err := yaml.Unmarshal([]byte(extra), &ex); err != nil {
@@ -149,11 +221,11 @@ func SyncConfigYAML(path string, m Managed) error {
 	if err != nil {
 		return err
 	}
-	out = append([]byte("# Managed by CarteLink — host/port/secret/auth-dir/api-keys are rewritten on every save.\n"), out...)
+	out = append([]byte("# Managed by CarteLink — host/port/secret/auth-dir/api-keys/plugins.enabled+dir are rewritten on every save.\n"), out...)
 	if string(out) == string(cur) {
 		return nil
 	}
-	return os.WriteFile(path, out, 0o644)
+	return writeFileAtomic(path, out)
 }
 
 func stringList(v any) []string {

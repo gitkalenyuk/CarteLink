@@ -1,0 +1,122 @@
+/* CarteLink floating switcher — the main window's system, at pocket size.
+   One coral accent marks the live preset; everything else is neutral. */
+:root {
+  --bg: #0b0b0e;
+  --surface: #141418;
+  --surface-2: #1b1b21;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-2: rgba(255, 255, 255, 0.14);
+  --text: #ededf0;
+  --text-2: #a3a3ae;
+  --text-3: #85858f;
+  --accent: #ff6a55;
+  --accent-soft: rgba(255, 106, 85, 0.14);
+  --ok: #3ecf8e;
+  --bad: #f26b6b;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body {
+  font-family: "Segoe UI Variable Text", "Segoe UI", -apple-system, system-ui, sans-serif;
+  font-size: 12.5px; color: var(--text); background: var(--bg);
+  user-select: none; -webkit-font-smoothing: antialiased;
+}
+svg.ico, svg.tick { width: 15px; height: 15px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.sw { display: flex; flex-direction: column; gap: 10px; padding: 12px; height: 100%; animation: in 400ms var(--ease) both; }
+@keyframes in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+/* header: what is answering right now */
+.head { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.live { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); flex: 0 0 auto; transition: background 200ms var(--ease), box-shadow 200ms var(--ease); }
+.live.on { background: var(--ok); box-shadow: 0 0 0 3px rgba(62, 207, 142, 0.16); }
+.live.err { background: var(--bad); box-shadow: 0 0 0 3px rgba(242, 107, 107, 0.16); }
+.head-t { color: var(--text-3); font-size: 11px; white-space: nowrap; }
+.head-m {
+  margin-left: auto; min-width: 0; max-width: 62%;
+  font-family: "Cascadia Code", "Cascadia Mono", Consolas, monospace; font-size: 11.5px; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.head-m.flash { animation: flash 700ms var(--ease); }
+@keyframes flash { 0% { color: var(--accent); } 100% { color: var(--text); } }
+
+/* two presets: the number applies it, the select changes it */
+.sw > * { flex-shrink: 0; }
+.slots { display: flex; flex-direction: column; gap: 6px; }
+.slot {
+  display: flex; align-items: center; gap: 6px; height: 38px; padding: 0 10px 0 6px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface); cursor: pointer;
+  transition: border-color 160ms var(--ease), background 160ms var(--ease);
+}
+.slot:hover { border-color: var(--border-2); background: var(--surface-2); }
+.num {
+  width: 24px; height: 24px; border-radius: 7px; border: 0; flex: 0 0 auto; cursor: pointer;
+  display: grid; place-items: center; background: var(--surface-2); color: var(--text-3);
+  font-family: inherit; font-weight: 700; font-size: 11.5px;
+  transition: background 200ms var(--ease), color 200ms var(--ease), transform 120ms var(--ease);
+}
+.num:active { transform: scale(0.92); }
+.pick {
+  flex: 1; min-width: 0; height: 30px; padding: 0 22px 0 6px;
+  border: 0; border-radius: 7px; background: transparent; color: var(--text-2);
+  font-family: "Cascadia Code", "Cascadia Mono", Consolas, monospace; font-size: 11.5px; cursor: pointer;
+  appearance: none; text-overflow: ellipsis;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2385858f' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 4px center; background-size: 13px;
+}
+.pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pick option, .pick optgroup { background: #17171c; color: var(--text); font-family: inherit; }
+.slot .tick { opacity: 0; color: var(--accent); transform: scale(0.6); transition: opacity 200ms var(--ease), transform 300ms var(--ease); }
+.slot.active { border-color: rgba(255, 106, 85, 0.5); background: var(--accent-soft); }
+.slot.active .num { background: var(--accent); color: #1a0703; }
+.slot.active .pick { color: var(--text); }
+.slot.active .tick { opacity: 1; transform: none; }
+.slot.empty .num { opacity: 0.5; }
+
+.swap {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  height: 36px; border: 0; border-radius: 9px; cursor: pointer;
+  font-family: inherit; font-weight: 650; font-size: 13px; color: #0b0b0d; background: var(--text);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.5) inset, 0 6px 16px -8px rgba(255, 255, 255, 0.35);
+  transition: background 150ms var(--ease), transform 120ms var(--ease);
+}
+.swap .ico { transition: transform 420ms var(--ease); }
+.swap:hover { background: #fff; }
+.swap:hover .ico { transform: rotate(180deg); }
+.swap:active { transform: scale(0.98); }
+.swap:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
+
+/* auto-advance toggle */
+.auto {
+  display: flex; align-items: flex-start; gap: 9px; margin-top: auto;
+  padding: 9px 10px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface);
+  cursor: pointer; transition: border-color 160ms var(--ease), background 160ms var(--ease);
+}
+.auto:hover { border-color: var(--border-2); }
+.auto input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.track {
+  width: 30px; height: 18px; border-radius: 18px; flex: 0 0 auto; margin-top: 1px; position: relative;
+  background: var(--surface-2); border: 1px solid var(--border-2);
+  transition: background 200ms var(--ease), border-color 200ms var(--ease);
+}
+.knob {
+  position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--text-3); transition: transform 300ms var(--ease), background 200ms var(--ease);
+}
+.auto input:checked + .track { background: var(--accent); border-color: transparent; }
+.auto input:checked + .track .knob { transform: translateX(12px); background: #fff; }
+.auto input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.auto-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.auto-t b { font-weight: 550; font-size: 11.5px; line-height: 1.35; color: var(--text-2); }
+.auto input:checked ~ .auto-t b { color: var(--text); }
+.auto-t i { font-style: normal; font-size: 10.5px; color: var(--text-3); }
+.auto.armed { border-color: rgba(255, 106, 85, 0.4); }
+.auto.armed .auto-t i { color: var(--accent); }
+
+.locked { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; height: 100%; padding: 16px; text-align: center; color: var(--text-2); }
+.locked b { color: var(--text); font-size: 14px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+}

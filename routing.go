@@ -37,6 +37,7 @@ func resolveModelName(cfg *config.Config, want string) string {
 // "gemini-*" can never be caught by a "mini" rule.
 func resolveModel(cfg *config.Config, want string, known func(string) bool) string {
 	r := &cfg.Routing
+	want = strip1M(want)
 	uncloaked := uncloakClaudeDDModel(want)
 	lw := strings.ToLower(strings.TrimSpace(uncloaked))
 
@@ -122,15 +123,33 @@ func tierTarget(r *config.Routing, lw string) string {
 			if lw != a {
 				continue
 			}
-			switch tier {
-			case "fast":
-				return t.Fast
-			case "main":
-				return t.Main
-			case "max":
-				return t.Max
+			return universalTier(r, tier)
+		}
+	}
+	return ""
+}
+
+// universalTier is the model behind cartelink-fast/main/max. A tier left
+// empty follows its Claude Code counterpart (fast → Haiku, main → Sonnet,
+// max → Opus) and then the default model, so configuring only the Claude
+// tiers (or only a default) still makes the universal aliases work.
+func universalTier(r *config.Routing, tier string) string {
+	t := r.Tiers
+	pick := func(vals ...string) string {
+		for _, v := range vals {
+			if strings.TrimSpace(v) != "" {
+				return v
 			}
 		}
+		return ""
+	}
+	switch tier {
+	case "fast":
+		return pick(t.Fast, t.Haiku, r.DefaultModel)
+	case "main":
+		return pick(t.Main, t.Sonnet, r.DefaultModel)
+	case "max":
+		return pick(t.Max, t.Opus, r.DefaultModel)
 	}
 	return ""
 }
@@ -142,14 +161,10 @@ func servedAliases(cfg *config.Config) []string {
 	r := &cfg.Routing
 	var out []string
 	if r.Mode != "table" {
-		if r.Tiers.Fast != "" {
-			out = append(out, "cartelink-fast")
-		}
-		if r.Tiers.Main != "" {
-			out = append(out, "cartelink-main")
-		}
-		if r.Tiers.Max != "" {
-			out = append(out, "cartelink-max")
+		for _, tier := range []string{"fast", "main", "max"} {
+			if universalTier(r, tier) != "" {
+				out = append(out, "cartelink-"+tier)
+			}
 		}
 	}
 	for k, v := range r.ModelMap {
@@ -158,4 +173,48 @@ func servedAliases(cfg *config.Config) []string {
 		}
 	}
 	return out
+}
+
+// claudePickerEntries are the /v1/models entries Claude Code shows in its
+// /model picker (gateway model discovery keeps only "claude" ids): the main
+// model under its real name, and fast/max only when they differ from it.
+//
+// Claude Code assumes a 200K window for every model it does not know and
+// ignores what /v1/models says about limits. The one thing it honours is a
+// "[1m]" suffix on the model id (it strips the suffix before sending), so an
+// entry whose model really has a 1M+ window carries it. ctxOf returns a
+// model's context window (0 = unknown); nil means unknown for all.
+func claudePickerEntries(cfg *config.Config, ctxOf func(string) int) []catalogModel {
+	entry := func(id, label, model string) catalogModel {
+		if ctxOf != nil && ctxOf(model) >= oneMillion {
+			return catalogModel{ID: id + "[1m]", DisplayName: label + model + " · 1M", OwnedBy: "cartelink"}
+		}
+		return catalogModel{ID: id, DisplayName: label + model, OwnedBy: "cartelink"}
+	}
+	main := resolveModel(cfg, "claude-cartelink-main", nil)
+	if main == "" || main == "claude-cartelink-main" {
+		return nil
+	}
+	out := []catalogModel{entry("claude-cartelink-main", "CarteLink: ", main)}
+	for _, tier := range []struct{ id, label string }{
+		{"claude-cartelink-fast", "CarteLink fast: "},
+		{"claude-cartelink-max", "CarteLink max: "},
+	} {
+		if m := resolveModel(cfg, tier.id, nil); m != "" && m != tier.id && m != main {
+			out = append(out, entry(tier.id, tier.label, m))
+		}
+	}
+	return out
+}
+
+// oneMillion is the window Claude Code assumes for a "[1m]" model id.
+const oneMillion = 1_000_000
+
+// strip1M removes Claude Code's client-side "[1m]" context marker, in case a
+// client sends it along.
+func strip1M(model string) string {
+	if n := len(model); n > 4 && strings.EqualFold(model[n-4:], "[1m]") {
+		return strings.TrimSpace(model[:n-4])
+	}
+	return model
 }

@@ -30,11 +30,12 @@ var uiFS embed.FS
 
 // App wires the embedded CLIProxyAPI service and UI together.
 type App struct {
-	mu       sync.Mutex
-	cfg      *config.Config
-	cp       *cliproxy.Embedded
-	cpWanted bool
-	logBuf   []string
+	mu        sync.Mutex
+	resolveFn func(model string) string
+	cfg       *config.Config
+	cp        *cliproxy.Embedded
+	cpWanted  bool
+	logBuf    []string
 	// lifecycle params for the Start/Stop/Restart buttons (set by main after
 	// the first successful Start).
 	rootCtx         context.Context
@@ -64,8 +65,14 @@ type App struct {
 	// sessionPort overrides the configured port for this run only.
 	sessionPort int
 	showFn      func()
+	// switcherFn shows (true) or hides (false) the floating model switcher
+	// window; nil where there is no desktop window.
+	switcherFn  func(show bool)
+	errLog      *ErrorLog
 	knownModels map[string]bool
 	knownAt     time.Time
+	// engineModels are the served model ids in their original spelling.
+	engineModels []string
 }
 
 // NewApp builds the app around the config. The embedded service reference is
@@ -76,6 +83,7 @@ func NewApp(cfg *config.Config) *App {
 	}
 	metricsPath := filepath.Join(config.DataDir(), "metrics.json")
 	a.metricsStore = NewMetricsStore(metricsPath)
+	a.errLog = NewErrorLog(filepath.Join(config.DataDir(), "errors.jsonl"))
 	return a
 }
 
@@ -211,6 +219,7 @@ func (a *App) SyncYAML(cfg *config.Config, retire ...string) error {
 		APIKeys:    cfg.Cliproxy.APIKeys,
 		RequireKey: cfg.RequireKey,
 		ExtraYAML:  cfg.Cliproxy.ExtraConfigYAML,
+		PluginsDir: config.CliproxyPluginsDir(),
 	})
 }
 
@@ -321,6 +330,52 @@ func (a *App) EffectivePort() int {
 	return a.cfg.Cliproxy.Port
 }
 
+// ErrorLog returns the request error log.
+func (a *App) ErrorLog() *ErrorLog { return a.errLog }
+
+// SetModelResolver sets how a client model name maps to the model CarteLink
+// sends it to (the routing lives in package main).
+func (a *App) SetModelResolver(f func(model string) string) {
+	a.mu.Lock()
+	a.resolveFn = f
+	a.mu.Unlock()
+}
+
+// ResolveModel maps a client model name through the routing ("" if unknown).
+func (a *App) ResolveModel(model string) string {
+	a.mu.Lock()
+	f := a.resolveFn
+	a.mu.Unlock()
+	if f == nil {
+		return model
+	}
+	return f(model)
+}
+
+// SetSwitcherHandler sets how the floating model switcher is shown/hidden.
+func (a *App) SetSwitcherHandler(f func(show bool)) {
+	a.mu.Lock()
+	a.switcherFn = f
+	a.mu.Unlock()
+}
+
+// UpdateConfig applies mutate to a copy of the current config, normalizes
+// and saves it, then swaps it in. mutate may return an error to abort.
+func (a *App) UpdateConfig(mutate func(c *config.Config) error) (*config.Config, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cfg := a.cfg.Clone()
+	if err := mutate(cfg); err != nil {
+		return nil, err
+	}
+	config.Normalize(cfg)
+	if err := cfg.Save(); err != nil {
+		return nil, err
+	}
+	a.cfg = cfg
+	return cfg, nil
+}
+
 // SetShowHandler sets what "show the app" does (window or browser).
 func (a *App) SetShowHandler(f func()) {
 	a.mu.Lock()
@@ -373,15 +428,30 @@ func (a *App) refreshModelCatalog() {
 		return
 	}
 	set := make(map[string]bool, len(body.Data))
+	ids := make([]string, 0, len(body.Data))
 	for _, m := range body.Data {
-		if id := strings.ToLower(strings.TrimSpace(uncloak(m.ID))); id != "" {
+		orig := strings.TrimSpace(uncloak(m.ID))
+		if id := strings.ToLower(orig); id != "" {
+			if !set[id] {
+				ids = append(ids, orig)
+			}
 			set[id] = true
 		}
 	}
 	a.mu.Lock()
+	a.engineModels = ids
 	a.knownModels = set
 	a.knownAt = time.Now()
 	a.mu.Unlock()
+}
+
+// EngineModels refreshes and returns every model id the engine serves
+// (accounts, API keys and plugin providers alike).
+func (a *App) EngineModels() []string {
+	a.refreshModelCatalog()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]string(nil), a.engineModels...)
 }
 
 // IsKnownModel reports whether the engine (or an enabled provider) serves

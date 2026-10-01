@@ -97,7 +97,13 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
+	// Engine plugins resolve some data paths against the working directory
+	// (autostart starts the app in System32): pin it to the engine folder.
+	_ = os.MkdirAll(config.CliproxyDir(), 0o755)
+	_ = os.Chdir(config.CliproxyDir())
+
 	app := web.NewApp(cfg)
+	app.SetModelResolver(func(m string) string { return resolveModel(app.CurrentConfig(), m, app.IsKnownModel) })
 	app.InitAuth()
 	app.StartAuthWatchdog()
 	app.StartMetricsCollector()
@@ -169,8 +175,11 @@ func main() {
 		// reachable while API traffic is paused.
 		isPanel := p == "/ui/" || strings.HasPrefix(p, "/ui/") ||
 			strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/v0/management/") ||
+			strings.HasPrefix(p, "/v0/resource/plugins/") ||
 			p == "/management.html" || p == "/healthz"
 		if !isPanel && !app.IsAuthenticated() {
+			app.ErrorLog().Add(web.ErrorEntry{Status: 403, Kind: "gateway", Method: c.Request.Method, Path: p,
+				Client: c.Request.UserAgent(), Message: "not_authenticated: Telegram login required"})
 			c.AbortWithStatusJSON(403, gin.H{
 				"error": gin.H{
 					"type":    "not_authenticated",
@@ -180,6 +189,8 @@ func main() {
 			return
 		}
 		if !isPanel && app.Paused() {
+			app.ErrorLog().Add(web.ErrorEntry{Status: 503, Kind: "gateway", Method: c.Request.Method, Path: p,
+				Client: c.Request.UserAgent(), Message: "paused: CarteLink is stopped"})
 			c.AbortWithStatusJSON(503, gin.H{
 				"error": gin.H{
 					"type":    "paused",
@@ -199,7 +210,44 @@ func main() {
 			handleAugmentedModels(c, app)
 			return
 		}
+		isModelAPI := strings.HasPrefix(p, "/v1") || p == "/models"
+		if isPanel || !isModelAPI || c.IsAborted() {
+			c.Next()
+			return
+		}
+		// Model traffic: record every error answer in the error log.
+		ew := &errCapture{ResponseWriter: c.Writer}
+		c.Writer = ew
 		c.Next()
+		want, _ := c.Get(ctxWantModel)
+		got, _ := c.Get(ctxResolvedModel)
+		ws, _ := want.(string)
+		gs, _ := got.(string)
+		if st := ew.Status(); st >= 400 {
+			sent := gs
+			if sent == "" {
+				sent = ws
+			}
+			if gs == ws {
+				gs = ""
+			}
+			msg := web.ErrorMessageFromBody(ew.buf.Bytes())
+			app.ErrorLog().Add(web.ErrorEntry{Status: st, Kind: "upstream", Method: c.Request.Method, Path: p,
+				Model: ws, Resolved: gs, Client: c.Request.UserAgent(), Message: msg})
+			// An account type that offers models its plan does not include
+			// (Kiro): hide the model there so requests go to accounts that have it.
+			if prov := web.RejectedModelProvider(msg); prov != "" {
+				go app.AutoHideModel(prov, sent)
+			}
+			// A content-filter refusal is about this request, not the key.
+			if web.IsContentFilterError(msg) {
+				go app.UnblockAfterContentFilter(sent)
+			}
+		} else if st < 400 && apiFamily(p) != "" {
+			// A real answer came back: the switcher may be set to move on
+			// to its second model after the first successful one.
+			app.SwitcherAutoAdvance(gs)
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -225,6 +273,15 @@ func main() {
 	instance.Register(port)
 	defer instance.Unregister()
 	app.StartModelCatalog()
+	// Keep a last-known-good copy of config.yaml (the engine writes it in place).
+	go func() {
+		for {
+			time.Sleep(5 * time.Minute)
+			cliproxy.BackupConfigYAML(cfgPath)
+		}
+	}()
+	// Keep the engine's model catalog current (new models appear without a rebuild).
+	cliproxy.StartModelCatalogUpdater(ctx)
 
 	uiURL := base + "/ui/"
 	if movedFrom != 0 {
@@ -241,6 +298,26 @@ func main() {
 			openBrowser(uiURL)
 		}
 	})
+
+	// Floating model switcher (Windows window). The page is served by this
+	// same engine; URL is re-read on every show in case the port moved.
+	if useGUI && desktop.SwitcherSupported() {
+		desktop.ConfigureSwitcher(desktop.SwitcherOptions{
+			URL: func() string {
+				return "http://" + config.DisplayHost(app.CurrentConfig().Cliproxy.Host) + ":" +
+					strconv.Itoa(app.EffectivePort()) + "/ui/switcher.html"
+			},
+			Pos: func() (int, int, bool) {
+				if p := app.CurrentConfig().Desktop.Switcher.Pos; p != nil {
+					return p[0], p[1], true
+				}
+				return 0, 0, false
+			},
+			OnClose: app.SwitcherClosed,
+			OnMove:  app.SwitcherMoved,
+		})
+		app.SetSwitcherHandler(desktop.SetSwitcherVisible)
+	}
 
 	// If the engine dies on its own, tell the user instead of hanging. The
 	// error channel is shared across restarts, so drain it in a loop; normal
@@ -290,11 +367,18 @@ func main() {
 		// The desktop app: one window, opened automatically. Closing it hides
 		// to the tray (Windows, if enabled) or quits.
 		err := desktop.RunMainWindow(desktop.Options{
-			URL:         uiURL,
-			Title:       config.AppName,
-			DataPath:    config.DataDir(),
-			CloseToTray: func() bool { return app.CurrentConfig().Desktop.CloseToTray },
-			StartHidden: *minimized,
+			URL:          uiURL,
+			Title:        config.AppName,
+			DataPath:     config.DataDir(),
+			CloseToTray:  func() bool { return app.CurrentConfig().Desktop.CloseToTray },
+			StartHidden:  *minimized,
+			ShowSwitcher: func() bool { return app.CurrentConfig().Desktop.Switcher.Enabled },
+			ToggleSwitcher: func() {
+				on := !app.CurrentConfig().Desktop.Switcher.Enabled
+				_, _ = app.UpdateConfig(func(c *config.Config) error { c.Desktop.Switcher.Enabled = on; return nil })
+				desktop.SetSwitcherVisible(on)
+			},
+			Lang: func() string { return app.CurrentConfig().Desktop.Lang },
 		})
 		if err != nil && err != desktop.ErrClosed {
 			log.Println("window creation failed, falling back to browser:", err)
@@ -350,6 +434,12 @@ func friendlyModelName(m string) string {
 		return "Gemini 3.1 Pro"
 	case strings.Contains(lower, "gpt-oss-120b"):
 		return "GPT-OSS 120B"
+	case strings.Contains(lower, "claude-opus-5-5"):
+		return "Claude Opus 5.5"
+	case strings.Contains(lower, "claude-sonnet-5-5"):
+		return "Claude Sonnet 5.5"
+	case strings.Contains(lower, "claude-fable-5-1"):
+		return "Claude Fable 5.1"
 	case strings.Contains(lower, "claude-sonnet-4-6"):
 		return "Claude Sonnet 4.6"
 	case strings.Contains(lower, "claude-opus-4-6"):
@@ -433,6 +523,8 @@ func rewriteModel(c *gin.Context, app *web.App) {
 	want, _ := payload["model"].(string)
 	cfg := app.CurrentConfig()
 	resolved := resolveModel(cfg, want, app.IsKnownModel)
+	c.Set(ctxWantModel, want)
+	c.Set(ctxResolvedModel, resolved)
 	changed := false
 	if resolved != want {
 		payload["model"] = resolved
@@ -446,6 +538,9 @@ func rewriteModel(c *gin.Context, app *web.App) {
 
 	// The blacklist is a hard block, not just a filter on /v1/models.
 	if isBlacklisted(cfg, targetModel) || isBlacklisted(cfg, want) {
+		app.ErrorLog().Add(web.ErrorEntry{Status: http.StatusBadRequest, Kind: "gateway", Method: c.Request.Method,
+			Path: c.Request.URL.Path, Model: want, Resolved: targetModel, Client: c.Request.UserAgent(),
+			Message: "model " + targetModel + " is blocked by the CarteLink model blacklist"})
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 			"type": "error",
 			"error": gin.H{
@@ -479,6 +574,24 @@ func rewriteModel(c *gin.Context, app *web.App) {
 		}
 		if changed {
 			payload["system"] = sysSlice
+		}
+	}
+
+	// The user's own system prompt / AGENT.md and reasoning settings. Both
+	// are read per request, so a change in the UI applies immediately; the
+	// reasoning settings go only to models the engine says support them.
+	// A reasoning level the target cannot take ("ultra" from Codex Desktop)
+	// is mapped to its nearest one first, whatever the thinking switch says.
+	if api := apiFamily(c.Request.URL.Path); api != "" {
+		if applyPrompting(cfg, payload, api) {
+			changed = true
+		}
+		caps := app.CapsFor(targetModel)
+		if normalizeEffort(payload, api, caps) {
+			changed = true
+		}
+		if applyThinking(cfg, payload, api, caps) {
+			changed = true
 		}
 	}
 
@@ -626,6 +739,43 @@ func openBrowser(u string) {
 	}
 }
 
+// Gin context keys: the model the client asked for and what it became.
+const (
+	ctxWantModel     = "cl.wantModel"
+	ctxResolvedModel = "cl.resolvedModel"
+)
+
+// errCapture passes a response through untouched while keeping the first
+// few KB of the body when the status is an error, for the error log.
+type errCapture struct {
+	gin.ResponseWriter
+	buf bytes.Buffer
+}
+
+func (w *errCapture) keep(n int) int {
+	if w.ResponseWriter.Status() < 400 {
+		return 0
+	}
+	if room := 8192 - w.buf.Len(); room < n {
+		return room
+	}
+	return n
+}
+
+func (w *errCapture) Write(b []byte) (int, error) {
+	if k := w.keep(len(b)); k > 0 {
+		w.buf.Write(b[:k])
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *errCapture) WriteString(s string) (int, error) {
+	if k := w.keep(len(s)); k > 0 {
+		w.buf.WriteString(s[:k])
+	}
+	return w.ResponseWriter.WriteString(s)
+}
+
 // responseRecorder captures status, headers and body from downstream handlers
 // without committing them immediately, allowing response transformation.
 type responseRecorder struct {
@@ -672,6 +822,8 @@ type catalogModel struct {
 
 var officialClaudeModels = []catalogModel{
 	{"claude-fable-5-1", "Claude Fable 5.1", "anthropic"},
+	{"claude-opus-5-5", "Claude Opus 5.5", "anthropic"},
+	{"claude-sonnet-5-5", "Claude Sonnet 5.5", "anthropic"},
 	{"claude-opus-5", "Claude Opus 5", "anthropic"},
 	{"claude-sonnet-5", "Claude Sonnet 5", "anthropic"},
 	{"claude-haiku-4-5", "Claude Haiku 4.5", "anthropic"},
@@ -707,6 +859,12 @@ const internalModelsHeader = "X-CarteLink-Internal"
 
 func handleAugmentedModels(c *gin.Context, app *web.App) {
 	if c.GetHeader(internalModelsHeader) == "1" {
+		c.Next()
+		return
+	}
+	// Codex asks with ?client_version= and expects the engine's own catalogue
+	// format ({"models":[…]} with context windows), not an OpenAI list.
+	if _, ok := c.Request.URL.Query()["client_version"]; ok {
 		c.Next()
 		return
 	}
@@ -770,6 +928,14 @@ func handleAugmentedModels(c *gin.Context, app *web.App) {
 	// 3. Aliases that currently resolve to a real model (tier aliases, table
 	// keys) and official Claude names the mapping rewrites — so client model
 	// pickers only offer names that will actually work.
+	if isAnthropic {
+		// Claude Code (CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1) lists
+		// only ids containing "claude" in its /model picker: offer the main
+		// model under its real name, plus fast/max when they differ.
+		for _, e := range claudePickerEntries(cfg, func(m string) int { return app.CapsFor(m).Context }) {
+			add(e)
+		}
+	}
 	for _, a := range servedAliases(cfg) {
 		add(catalogModel{ID: a, DisplayName: a + " → " + resolveModel(cfg, a, nil), OwnedBy: "cartelink"})
 	}
@@ -800,13 +966,26 @@ func handleAugmentedModels(c *gin.Context, app *web.App) {
 	if isAnthropic {
 		dataList := make([]map[string]any, 0, len(allModels))
 		for _, m := range allModels {
+			// Real limits of the model this id ends up on (200K/64K if unknown).
+			target := resolveModel(cfg, m.ID, app.IsKnownModel)
+			if target == "" {
+				target = m.ID
+			}
+			caps := app.CapsFor(target)
+			maxIn, maxOut := caps.Context, caps.MaxOutput
+			if maxIn <= 0 {
+				maxIn = 200000
+			}
+			if maxOut <= 0 {
+				maxOut = 64000
+			}
 			dataList = append(dataList, map[string]any{
 				"type":             "model",
 				"id":               m.ID,
 				"display_name":     m.DisplayName,
 				"created_at":       "2025-01-01T00:00:00Z",
-				"max_tokens":       64000,
-				"max_input_tokens": 200000,
+				"max_tokens":       maxOut,
+				"max_input_tokens": maxIn,
 				"object":           "model",
 				"owned_by":         m.OwnedBy,
 			})

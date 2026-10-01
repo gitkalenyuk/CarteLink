@@ -35,14 +35,20 @@ func (a *App) apiAppSettingsGet(w http.ResponseWriter, r *http.Request) {
 		"autostart":     desktop.AutostartEnabled(),
 		"closeToTray":   cfg.Desktop.CloseToTray,
 		"trayAvailable": desktop.TraySupported(),
+		"lang":          cfg.Desktop.Lang,
+		"switcher":      cfg.Desktop.Switcher.Enabled,
+		// The floating switcher needs the desktop window (Windows build).
+		"switcherAvailable": a.switcherAvailable(),
 	})
 }
 
 // apiAppSettingsPut: PUT /api/app/settings {autostart?, closeToTray?}
 func (a *App) apiAppSettingsPut(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Autostart   *bool `json:"autostart"`
-		CloseToTray *bool `json:"closeToTray"`
+		Autostart   *bool   `json:"autostart"`
+		CloseToTray *bool   `json:"closeToTray"`
+		Lang        *string `json:"lang"`
+		Switcher    *bool   `json:"switcher"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req); err != nil {
 		jsonWrite(w, http.StatusBadRequest, anyMap{"ok": false, "error": "invalid body"})
@@ -54,18 +60,25 @@ func (a *App) apiAppSettingsPut(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if req.CloseToTray != nil {
-		a.mu.Lock()
-		cfg := a.cfg.Clone()
-		cfg.Desktop.CloseToTray = *req.CloseToTray
-		err := cfg.Save()
-		if err == nil {
-			a.cfg = cfg
-		}
-		a.mu.Unlock()
+	if req.CloseToTray != nil || req.Lang != nil || req.Switcher != nil {
+		_, err := a.UpdateConfig(func(c *config.Config) error {
+			if req.CloseToTray != nil {
+				c.Desktop.CloseToTray = *req.CloseToTray
+			}
+			if req.Lang != nil {
+				c.Desktop.Lang = *req.Lang
+			}
+			if req.Switcher != nil {
+				c.Desktop.Switcher.Enabled = *req.Switcher
+			}
+			return nil
+		})
 		if err != nil {
 			jsonWrite(w, http.StatusInternalServerError, anyMap{"ok": false, "error": err.Error()})
 			return
+		}
+		if req.Switcher != nil {
+			a.showSwitcher(*req.Switcher)
 		}
 	}
 	a.apiAppSettingsGet(w, r)

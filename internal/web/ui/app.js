@@ -4,6 +4,39 @@
 const $ = (id) => document.getElementById(id);
 const NL = String.fromCharCode(10);
 
+// Inline icon from the sprite in index.html.
+function ic(name, cls) {
+  return '<svg class="i' + (cls ? ' ' + cls : '') + '"><use href="#i-' + name + '"/></svg>';
+}
+
+// Count a number up to its new value (only when it changes).
+function animateNumber(el, to, fmt) {
+  if (!el) return;
+  fmt = fmt || String;
+  const from = Number(el.dataset.v);
+  el.dataset.v = String(to);
+  el.classList.remove('skel');
+  if (!isFinite(from) || from === to || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    el.textContent = fmt(to);
+    return;
+  }
+  const t0 = performance.now();
+  const dur = 650;
+  const step = (now) => {
+    const k = Math.min(1, (now - t0) / dur);
+    const e = 1 - Math.pow(2, -10 * k);
+    el.textContent = fmt(Math.round(from + (to - from) * (k === 1 ? 1 : e)));
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+function skeletonRows(n) {
+  let h = '';
+  for (let i = 0; i < n; i++) h += '<span class="skel skel-line" style="width:' + (92 - i * 13) + '%"></span>';
+  return h;
+}
+
 function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;')
@@ -16,21 +49,21 @@ function esc(s) {
 // ---------- toast + copy ----------
 let toastTimer = null;
 function toast(text, isErr) {
-  const t = $('toast');
-  t.textContent = text;
-  t.className = 'toast show' + (isErr ? ' err' : '');
+  const tEl = $('toast');
+  tEl.textContent = text;
+  tEl.className = 'toast show' + (isErr ? ' err' : '');
   clearTimeout(toastTimer);
   // Errors stay longer so they can actually be read.
-  toastTimer = setTimeout(() => { t.className = 'toast hidden'; }, isErr ? 6000 : 2400);
+  toastTimer = setTimeout(() => { tEl.className = 'toast hidden'; }, isErr ? 6000 : 2400);
 }
 
 async function copyVal(text, label) {
   if (!text) { toast('Нічого копіювати', true); return; }
   try {
     await navigator.clipboard.writeText(text);
-    toast((label || 'Скопійовано') + ' ✓');
+    toast(t(label || 'Скопійовано') + ' ✓');
   } catch (e) {
-    window.prompt('Скопіюй вручну:', text);
+    window.prompt(t('Скопіюй вручну:'), text);
   }
 }
 
@@ -96,7 +129,7 @@ function msg(el, text, ok) {
 }
 
 function confirmDo(text) {
-  return window.confirm(text);
+  return window.confirm(t(text));
 }
 
 // ---------- navigation ----------
@@ -126,9 +159,11 @@ function showPage(name) {
   if (name === 'cliproxy') refreshCliproxy();
   if (name === 'metrics') {
     refreshMetrics();
+    refreshErrors();
     if (!metricsPollTimer) metricsPollTimer = setInterval(refreshMetrics, 3000);
   }
   if (name === 'settings') refreshSettings();
+  if (name === 'prompt') refreshPrompt();
 }
 
 document.querySelectorAll('nav button').forEach((b) => {
@@ -145,10 +180,7 @@ document.addEventListener('click', (e) => {
     const q = new URLSearchParams(location.search);
     const moved = q.get('moved');
     if (moved && $('port-banner')) {
-      $('port-banner').textContent =
-        'Порт ' + moved + ' зайнятий іншою програмою, тому зараз CarteLink працює на порту ' +
-        (q.get('port') || '?') + '. Це лише на цей запуск — звільни порт ' + moved +
-        ' (закрий іншу програму) і перезапусти CarteLink, щоб повернутись до звичної адреси.';
+      $('port-banner').textContent = t('Порт {old} зайнятий іншою програмою, тому зараз CarteLink працює на порту {port}. Це лише на цей запуск — звільни порт {old} (закрий іншу програму) і перезапусти CarteLink, щоб повернутись до звичної адреси.', { old: moved, port: q.get('port') || '?' });
       $('port-banner').style.display = '';
     }
   } catch (e) { /* no banner */ }
@@ -173,9 +205,11 @@ function fmtNum(n) {
 }
 
 async function loadStatus() {
+  const gen = MODELS_GEN;
   const st = await api('/status');
   LAST_STATUS = st;
   paintServerStatus(st);
+  syncModelsForm(st.routing, gen);
   return st;
 }
 
@@ -186,10 +220,10 @@ function paintServerStatus(st) {
   const paused = !!eng.paused;
   const host = displayHost(eng.host);
   let headline = running ? 'Працює' : (paused ? 'Пауза' : 'Зупинено');
-  let sub = running ? 'Програми можуть підключатись до http://' + host + ':' + eng.port : 'Шлюз не приймає запити.';
+  let sub = running ? t('Програми можуть підключатись до {url}', { url: 'http://' + host + ':' + eng.port }) : t('Шлюз не приймає запити.');
   if (restarting) { headline = 'Перезапуск…'; sub = 'Рушій перезапускається.'; }
   else if (paused) { sub = 'Запити від програм тимчасово не приймаються. Натисни «Запустити».'; }
-  if (eng.lastError) { sub += ' Помилка: ' + eng.lastError; }
+  if (eng.lastError) { sub += ' ' + t('Помилка: {e}', { e: eng.lastError }); }
   $('bigDot').className = 'big-dot ' + (running ? 'on' : 'off');
   $('statusHeadline').textContent = headline;
   $('statusSub').textContent = sub;
@@ -197,8 +231,14 @@ function paintServerStatus(st) {
   $('btnStop').disabled = !running || restarting;
   $('btnRestart').disabled = restarting;
   $('tbStatus').className = 'tb-pill ' + (running ? 'on' : 'off');
-  $('tbStatusText').textContent = running ? 'працює :' + eng.port : (paused ? 'пауза' : 'зупинено');
+  $('tbStatusText').textContent = running ? t('працює :{port}', { port: eng.port }) : (paused ? 'пауза' : 'зупинено');
   if (st.version) $('sidebar-version').textContent = 'v' + st.version;
+  // The main model can change from the floating switcher at any time.
+  const r = st.routing || {};
+  const tiers = r.tiers || {};
+  const mainModel = cleanModelName(tiers.sonnet || tiers.main) || cleanModelName(r.defaultModel);
+  setNowModel(mainModel);
+  if ($('nowDot')) $('nowDot').classList.toggle('off', !running);
 }
 
 // After a restart the engine may come back on another port: poll its
@@ -237,7 +277,7 @@ async function serverAction(kind) {
     if (r.restarting) { followRestart(r.host, r.port); return; }
     toast(kind === 'stop' ? 'На паузі' : 'Працює ✓');
   } catch (e) {
-    toast('Помилка: ' + e.message, true);
+    toast(t('Помилка: {e}', { e: e.message }), true);
   }
   refreshHome();
 }
@@ -259,6 +299,7 @@ let MODEL_OPTS = [];
 let MODEL_GROUPS = [];
 let MODEL_BLACKLIST = [];
 let AUTH_FILES = [];
+let MODELS_BY_PROV = {}; // provider -> [model ids] served by its accounts
 
 function isModelBlacklisted(id) {
   if (!id) return false;
@@ -305,10 +346,15 @@ function populateModelSelect(sel, curValue, emptyLabel) {
   if (cleanCur && !found) {
     const opt = document.createElement('option');
     opt.value = cleanCur;
-    opt.textContent = cleanCur + ' (недоступна зараз)';
+    opt.textContent = cleanCur + ' ' + t('(недоступна зараз)');
     opt.selected = true;
     sel.appendChild(opt);
   }
+}
+
+function provTitle(prov) {
+  prov = String(prov || '');
+  return prov.charAt(0).toUpperCase() + prov.slice(1);
 }
 
 // Candidate models: the real models of connected accounts (fetched from the
@@ -343,11 +389,13 @@ async function collectModelOptions() {
       }
     } catch (e) { /* per-file error tolerated */ }
   }));
+  MODELS_BY_PROV = {};
   for (const prov of Object.keys(byProv).sort()) {
     const ids = Array.from(byProv[prov]).sort();
+    MODELS_BY_PROV[prov] = ids;
     const count = authFiles.filter((f) => (f.provider || f.type || '').toLowerCase() === prov).length;
     groups.push({
-      label: '◆ ' + prov.charAt(0).toUpperCase() + prov.slice(1) + (count > 1 ? ' (' + count + ' акаунти, чергуються)' : ''),
+      label: '◆ ' + provTitle(prov) + (count > 1 ? ' ' + t('({n} акаунти, чергуються)', { n: count }) : ''),
       options: ids.map((id) => ({ value: id, text: id })),
     });
     ids.forEach((id) => allOpts.add(id));
@@ -373,6 +421,19 @@ async function collectModelOptions() {
     }
   } catch (e) { /* engine offline */ }
 
+  // Everything else the engine serves (plugin providers such as CommandCode,
+  // native API keys…).
+  try {
+    const em = await api('/engine-models');
+    const lowSeen = new Set(Array.from(allOpts).map((x) => String(x).toLowerCase()));
+    const rest = ((em && em.models) || []).filter((id) => id && !lowSeen.has(String(id).toLowerCase()) &&
+      !/^claude-cartelink-|^cartelink-/.test(id)).sort();
+    if (rest.length) {
+      groups.push({ label: '◇ ' + t('Інші моделі рушія'), options: rest.map((id) => ({ value: id, text: id })) });
+      rest.forEach((id) => allOpts.add(id));
+    }
+  } catch (e) { /* engine offline */ }
+
   MODEL_GROUPS = groups;
   MODEL_OPTS = Array.from(allOpts);
 }
@@ -391,22 +452,33 @@ async function refreshHome() {
     $('apiKey').value = st.requireKey ? (ep.key || '') : 'будь-який (перевірку ключа вимкнено)';
   } catch (e) { /* keep */ }
 
+  if (!$('homeAcctList').children.length) $('homeAcctList').innerHTML = skeletonRows(3);
+  if (!$('homeErrList').children.length) $('homeErrList').innerHTML = skeletonRows(3);
   await collectModelOptions();
   const routing = st.routing || {};
   const main = cleanModelName(routing.tiers && (routing.tiers.sonnet || routing.tiers.main)) || cleanModelName(routing.defaultModel);
-  $('homeModel').textContent = main || 'не обрано';
+  setNowModel(main);
   populateModelSelect($('wizModel'), main, '— обери модель —');
+  populateModelSelect($('homeQuickModel'), main, '— обери модель —');
+  renderHomePresets();
+  renderHomeAccounts();
+  refreshHomeErrors();
 
   const okAccounts = AUTH_FILES.filter((f) => accountOk(f)).length;
-  $('homeAccounts').textContent = String(AUTH_FILES.length);
-  $('homeAccountsSub').textContent = AUTH_FILES.length ? (okAccounts + ' активні' + (AUTH_FILES.length - okAccounts ? ', ' + (AUTH_FILES.length - okAccounts) + ' на паузі/ліміті' : '')) : 'не підключено';
+  animateNumber($('homeAccounts'), AUTH_FILES.length);
+  $('homeAccountsSub').textContent = AUTH_FILES.length ? (t('{n} активні', { n: okAccounts }) + (AUTH_FILES.length - okAccounts ? ', ' + t('{n} на паузі/ліміті', { n: AUTH_FILES.length - okAccounts }) : '')) : 'не підключено';
 
   try {
     const m = await api('/metrics');
     const s = (m && m.metrics) || {};
-    $('homeReqs').textContent = fmtNum(s.total_requests || 0);
-    $('homeReqsSub').textContent = (s.total_failed || 0) + ' помилок';
-    $('homeTokens').textContent = fmtNum(s.total_tokens || 0);
+    animateNumber($('homeReqs'), Number(s.total_requests || 0), fmtNum);
+    $('homeReqsSub').textContent = t('{n} помилок', { n: s.total_failed || 0 });
+    animateNumber($('homeTokens'), Number(s.total_tokens || 0), fmtNum);
+    const total = Number(s.total_requests || 0);
+    const rate = total ? Math.round((Number(s.total_success || 0) / total) * 1000) / 10 : 100;
+    animateNumber($('homeSuccess'), Math.round(rate), (v) => v + '%');
+    $('homeSuccessSub').textContent = t('{ok} успішних / {bad} помилок', { ok: s.total_success || 0, bad: s.total_failed || 0 });
+    renderActivityChart($('homeChart'), $('homeChartAxis'), s.history || []);
   } catch (e) { /* ignore */ }
 
   // Wizard: steps tick off by themselves.
@@ -418,11 +490,155 @@ async function refreshHome() {
   $('wiz1').classList.toggle('done', step1);
   $('wiz2').classList.toggle('done', step2);
   $('wiz3').classList.toggle('done', step3);
-  $('wiz1sub').textContent = step1 ? 'Готово: ' + AUTH_FILES.length + ' акаунт(ів).' : 'Наприклад, звичайний Google-акаунт (Gemini-Antigravity) — безкоштовно.';
-  $('wiz2sub').textContent = step2 ? 'Зараз: ' + main + '. Можна змінити тут або на сторінці «Моделі».' : 'Вона обслуговуватиме всі запити. Тонко налаштувати можна на сторінці «Моделі».';
+  $('wiz1sub').textContent = step1 ? t('Готово: {n} акаунт(ів).', { n: AUTH_FILES.length }) : 'Наприклад, звичайний Google-акаунт (Gemini-Antigravity) — безкоштовно.';
+  $('wiz2sub').textContent = step2 ? t('Зараз: {m}. Можна змінити тут або на сторінці «Моделі».', { m: main }) : 'Вона обслуговуватиме всі запити. Тонко налаштувати можна на сторінці «Моделі».';
   let hidden = false;
   try { hidden = localStorage.getItem(WIZ_KEY) === '1'; } catch (e) { /* ignore */ }
-  $('wizard').style.display = hidden ? 'none' : '';
+  $('wizard').style.display = hidden || (step1 && step2 && step3) ? 'none' : '';
+  refreshSwitcherToggle();
+}
+
+// "Now answering": the big model name rolls in only when it changes.
+function setNowModel(m) {
+  const el = $('homeModel');
+  if (!el) return;
+  const val = m || '';
+  if (el.dataset.m === val) return;
+  el.dataset.m = val;
+  el.innerHTML = '<span class="roll">' + esc(val || t('не обрано')) + '</span>';
+}
+
+$('homeQuickApply').addEventListener('click', async () => {
+  const b = $('homeQuickApply');
+  b.disabled = true;
+  if (await applyModelEverywhere($('homeQuickModel').value)) {
+    b.classList.add('is-done');
+    setTimeout(() => b.classList.remove('is-done'), 1200);
+    loadStatus().catch(() => {});
+    renderHomePresets();
+  }
+  b.disabled = false;
+});
+
+// Presets 1/2 of the floating switcher, usable right here.
+async function renderHomePresets() {
+  const box = $('homePresets');
+  if (!box) return;
+  let sw = null;
+  try { sw = await api('/switcher'); } catch (e) { box.innerHTML = ''; return; }
+  const slot = (n) => {
+    const m = n === 1 ? sw.model1 : sw.model2;
+    return '<button class="preset-btn' + (sw.active === n ? ' active' : '') + '" data-preset="' + n + '" title="' +
+      esc(m ? t('Застосувати модель {n} до всього', { n: n }) : t('Зберегти вибрану модель як {n}', { n: n })) + '">' +
+      '<span class="n">' + n + '</span><span class="m">' + esc(m || t('зберегти сюди')) + '</span></button>';
+  };
+  box.innerHTML = slot(1) + slot(2) +
+    '<button class="btn btn-sm btn-ghost" id="homeSwap"' + (sw.model1 && sw.model2 ? '' : ' disabled') + '>' + ic('swap') + t('Перемкнути') + '</button>';
+  box.querySelectorAll('[data-preset]').forEach((b) => b.addEventListener('click', async () => {
+    const n = Number(b.dataset.preset);
+    const m = n === 1 ? sw.model1 : sw.model2;
+    try {
+      if (m) {
+        await api('/switcher/switch', { method: 'POST', body: JSON.stringify({ to: n }) });
+        toast(t('Модель {m} тепер основна ✓', { m: m }));
+      } else {
+        const v = cleanModelName($('homeQuickModel').value);
+        if (!v) { toast('Спочатку обери модель зі списку', true); return; }
+        await api('/switcher', { method: 'PUT', body: JSON.stringify(n === 1 ? { model1: v } : { model2: v }) });
+      }
+      await loadStatus();
+      renderHomePresets();
+    } catch (e) { toast(t('Не вдалось: {e}', { e: e.message }), true); }
+  }));
+  $('homeSwap').addEventListener('click', async () => {
+    try {
+      const r = await api('/switcher/switch', { method: 'POST', body: '{}' });
+      toast(t('Модель {m} тепер основна ✓', { m: r.current }));
+      await loadStatus();
+      renderHomePresets();
+    } catch (e) { toast(t('Не вдалось: {e}', { e: e.message }), true); }
+  });
+}
+
+function accountState(f) {
+  if (f.disabled) return ['вимкнено', ''];
+  if (f.cooldowns && f.cooldowns.length) return ['ліміт', 'warn'];
+  if (f.status === 'error' || f.status === 'unavailable') return ['помилка', 'err'];
+  return accountOk(f) ? ['активний', 'ok'] : [f.status || '—', ''];
+}
+
+function renderHomeAccounts() {
+  const box = $('homeAcctList');
+  if (!AUTH_FILES.length) {
+    box.innerHTML = '<div class="empty small">' + ic('users', 'i-lg') + '<div>Акаунтів ще немає</div>' +
+      '<button class="btn btn-sm" data-goto="cliproxy">' + ic('plus', 'i-sm') + 'Підключити акаунт</button></div>';
+    return;
+  }
+  const rank = (f) => { const c = accountState(f)[1]; return c === 'err' ? 0 : c === 'warn' ? 1 : c === 'ok' ? 3 : 2; };
+  const list = AUTH_FILES.slice().sort((a, b) => rank(a) - rank(b));
+  const rows = list.slice(0, 6).map((f) => {
+    const prov = String(f.provider || f.type || '?');
+    const [label, cls] = accountState(f);
+    return '<div class="list-row"><span class="prov-ic">' + esc(prov.slice(0, 2)) + '</span>' +
+      '<span class="grow">' + esc(f.email || f.account || f.label || f.name || '') + '<div class="sub">' + esc(provTitle(prov)) + '</div></span>' +
+      '<span class="chip ' + cls + '">' + esc(t(label)) + '</span></div>';
+  }).join('');
+  box.innerHTML = rows + (list.length > 6 ? '<div class="list-row sub">' + esc(t('+ще {n}', { n: list.length - 6 })) + '</div>' : '');
+}
+
+function relTime(ms) {
+  const d = Math.max(0, Date.now() - ms) / 1000;
+  if (d < 60) return t('щойно');
+  if (d < 3600) return t('{n} хв тому', { n: Math.round(d / 60) });
+  if (d < 86400) return t('{n} год тому', { n: Math.round(d / 3600) });
+  return fmtTime(ms);
+}
+
+async function refreshHomeErrors() {
+  const box = $('homeErrList');
+  let r;
+  try { r = await api('/errors?limit=200'); } catch (e) { return; }
+  const list = (r && r.errors) || [];
+  const day = list.filter((e) => Date.now() - e.t < 86400000).reduce((a, e) => a + (e.count || 1), 0);
+  const badge = $('navErrBadge');
+  if (badge) { badge.textContent = day > 99 ? '99+' : String(day); badge.style.display = day ? '' : 'none'; }
+  if (!list.length) {
+    box.innerHTML = '<div class="empty small">' + ic('check', 'i-lg') + '<div>Помилок немає</div></div>';
+    return;
+  }
+  box.innerHTML = list.slice(0, 4).map((e) => {
+    const hint = errorHint(e);
+    return '<div class="err-line"><span class="code">' + esc(e.status) + '</span><div class="what"><div title="' + esc(e.message) + '">' + esc(e.message) + '</div>' +
+      (hint ? '<div class="sub" style="color:var(--text-3)">' + esc(t(hint)) + '</div>' : '') + '</div>' +
+      '<span class="when">' + esc(relTime(e.t)) + (e.count > 1 ? ' ×' + e.count : '') + '</span></div>';
+  }).join('');
+}
+
+// Requests per hour for the last 24 hours (history is newest first).
+function renderActivityChart(box, axis, history) {
+  if (!box) return;
+  const now = Date.now();
+  const hour = 3600000;
+  const end = Math.ceil(now / hour) * hour;
+  const buckets = [];
+  for (let i = 23; i >= 0; i--) buckets.push({ at: end - (i + 1) * hour, ok: 0, bad: 0 });
+  for (const r of history) {
+    const ts = Date.parse(r.timestamp);
+    if (!ts || ts < end - 24 * hour) continue;
+    const idx = Math.min(23, Math.floor((ts - (end - 24 * hour)) / hour));
+    if (r.failed) buckets[idx].bad++; else buckets[idx].ok++;
+  }
+  const max = Math.max(1, ...buckets.map((b) => b.ok + b.bad));
+  const hh = (ms) => String(new Date(ms).getHours()).padStart(2, '0') + ':00';
+  box.innerHTML = buckets.map((b, i) => {
+    const okH = (b.ok / max) * 100;
+    const badH = (b.bad / max) * 100;
+    const tip = hh(b.at) + ' — ' + t('{ok} успішних / {bad} помилок', { ok: b.ok, bad: b.bad });
+    return '<div class="bar" title="' + esc(tip) + '">' +
+      (b.ok ? '<div class="ok" style="height:' + okH + '%;animation-delay:' + (i * 14) + 'ms"></div>' : '') +
+      (b.bad ? '<div class="bad" style="height:' + badH + '%;animation-delay:' + (i * 14) + 'ms"></div>' : '') + '</div>';
+  }).join('');
+  if (axis) axis.innerHTML = '<span>' + hh(buckets[0].at) + '</span><span>' + hh(buckets[12].at) + '</span><span>' + hh(end) + '</span>';
 }
 
 function accountOk(f) {
@@ -431,26 +647,43 @@ function accountOk(f) {
   return !!status && !isError && status !== 'unavailable' && !f.disabled;
 }
 
-// One model for everything: all tiers + default model.
+// One model for everything: all tiers, the default model, every exact swap
+// and table row (done by the backend, shared with the floating switcher).
 async function applyModelEverywhere(model, msgEl) {
   model = cleanModelName(model);
   if (!model) { toast('Спочатку обери модель зі списку', true); return false; }
   try {
-    await saveConfig((cfg) => {
-      cfg.routing = cfg.routing || {};
-      const t = cfg.routing.tiers = cfg.routing.tiers || {};
-      t.haiku = t.sonnet = t.opus = t.fast = t.main = t.max = model;
-      cfg.routing.defaultModel = model;
-      cfg.routing.defaultProviderId = '';
-    });
-    toast('Модель ' + model + ' тепер основна ✓');
+    // Queued with config saves so it never races a pending save.
+    const p = saveChain.then(() => api('/routing/apply-all', { method: 'POST', body: JSON.stringify({ model: model }) }));
+    saveChain = p.catch(() => {});
+    await p;
+    toast(t('Модель {m} тепер основна ✓', { m: model }));
     if (msgEl) msg(msgEl, 'Збережено ✓', true);
     return true;
   } catch (e) {
-    toast('Не збережено: ' + e.message, true);
+    toast(t('Не збережено: {e}', { e: e.message }), true);
     return false;
   }
 }
+
+// Floating switcher toggle (Windows desktop build only).
+async function refreshSwitcherToggle() {
+  try {
+    const a = await api('/app/settings');
+    $('switcherCard').style.display = a.switcherAvailable ? '' : 'none';
+    $('set-switcher').checked = !!a.switcher;
+  } catch (e) { /* keep */ }
+}
+$('set-switcher').addEventListener('change', async () => {
+  const on = $('set-switcher').checked;
+  try {
+    await api('/app/settings', { method: 'PUT', body: JSON.stringify({ switcher: on }) });
+    toast(on ? 'Перемикач відкрито — його можна перетягувати ✓' : 'Перемикач сховано');
+  } catch (e) {
+    toast(t('Не вдалось: {e}', { e: e.message }), true);
+    $('set-switcher').checked = !on;
+  }
+});
 
 $('wizModelSave').addEventListener('click', async () => {
   if (await applyModelEverywhere($('wizModel').value)) refreshHome();
@@ -480,7 +713,7 @@ function clientVars() {
   const ep = LAST_EP || {};
   const base = ep.base || ep.anthropic || ('http://127.0.0.1:' + ((st.engine && st.engine.port) || 8317));
   const tiers = (st.routing && st.routing.tiers) || {};
-  const key = st.requireKey === false ? 'any' : (ep.key || '<ключ>');
+  const key = st.requireKey === false ? 'any' : (ep.key || '<' + t('ключ') + '>');
   return {
     BASE: base,
     BASE_V1: base + '/v1',
@@ -490,8 +723,27 @@ function clientVars() {
   };
 }
 
+// Context windows of the models the snippets point at (model → tokens, 0 =
+// unknown), so e.g. Codex is told the real window instead of its own 272K.
+const CLIENT_CTX = {};
+
+async function loadClientCtx(model) {
+  if (!model || model in CLIENT_CTX) return;
+  CLIENT_CTX[model] = 0;
+  try {
+    const r = await api('/model-context?model=' + encodeURIComponent(model));
+    CLIENT_CTX[model] = (r && r.context) || 0;
+  } catch (e) { /* unknown */ }
+  if (CLIENT_CTX[model]) renderClientBody();
+}
+
 function fillVars(s, v) {
-  return String(s || '').replace(/\{\{(BASE_V1|BASE|KEY|MODEL_FAST|MODEL)\}\}/g, (m, k) => v[k]);
+  const ctx = CLIENT_CTX[v.MODEL] || 0;
+  let out = String(s || '');
+  // Lines that need the context window are left out while it is unknown.
+  if (!ctx) out = out.split('\n').filter((l) => l.indexOf('{{CTX') < 0).join('\n');
+  const vals = Object.assign({}, v, { CTX: String(ctx), CTX_COMPACT: String(Math.floor(ctx * 0.9)) });
+  return out.replace(/\{\{(BASE_V1|BASE|KEY|MODEL_FAST|MODEL|CTX_COMPACT|CTX)\}\}/g, (m, k) => vals[k]);
 }
 
 function envScript(env, shell, persist, v) {
@@ -509,11 +761,11 @@ function envScript(env, shell, persist, v) {
     }
   }
   if (persist && shell === 'bash') {
-    lines.unshift('# додай ці рядки в кінець ~/.zshrc (macOS) або ~/.bashrc (Linux):');
+    lines.unshift('# ' + t('додай ці рядки в кінець ~/.zshrc (macOS) або ~/.bashrc (Linux):'));
   }
   if (persist && shell !== 'bash') {
     lines.push('');
-    lines.push(shell === 'ps' ? '# потім закрий і знову відкрий термінал' : 'REM потім закрий і знову відкрий термінал');
+    lines.push((shell === 'ps' ? '# ' : 'REM ') + t('потім закрий і знову відкрий термінал'));
   }
   return lines.join(NL);
 }
@@ -554,14 +806,14 @@ function renderClientDetail() {
   const needsModel = JSON.stringify([c.env, c.file, c.steps]).indexOf('{{MODEL') >= 0;
   let html = '<div class="card-title">' + esc(c.name) +
     (c.docs ? ' <a class="hint" href="' + esc(c.docs) + '" target="_blank" rel="noopener">документація ↗</a>' : '') + '</div>';
-  if (c.note) html += '<div class="notice-inline' + (c.uncertain ? ' warn' : '') + '">' + esc(c.note) + '</div>';
+  if (c.note) html += '<div class="notice-inline' + (c.uncertain ? ' warn' : '') + '">' + esc(fillVars(t(c.note), clientVars())) + '</div>';
   if (needsModel) {
     html += '<div class="grid two" style="margin-top:12px">' +
       '<label>Модель <select id="clientModel"></select></label>' +
       '<label>Швидка модель <select id="clientModelFast"></select></label></div>';
   }
   html += '<div id="clientBody"></div>';
-  html += '<div class="row-end" style="margin-top:14px"><button class="btn btn-sm btn-accent" id="clientDone">✓ Я підключив</button></div>';
+  html += '<div class="row-end" style="margin-top:14px"><button class="btn btn-sm btn-accent" id="clientDone">' + ic('check') + 'Я підключив</button></div>';
   box.innerHTML = html;
 
   if (needsModel) {
@@ -601,10 +853,11 @@ function renderClientBody() {
   const body = $('clientBody');
   if (!c || !body) return;
   const v = clientVars();
+  if (JSON.stringify([c.env, c.file, c.steps]).indexOf('{{CTX') >= 0) loadClientCtx(v.MODEL);
   let html = '';
   let step = 1;
   if (c.steps && c.steps.length) {
-    html += '<ol class="client-steps">' + c.steps.map((s) => '<li>' + esc(fillVars(s, v)) + '</li>').join('') + '</ol>';
+    html += '<ol class="client-steps">' + c.steps.map((s) => '<li>' + esc(fillVars(t(s), v)) + '</li>').join('') + '</ol>';
     step = c.steps.length + 1;
   }
   if (c.env && c.env.length) {
@@ -614,12 +867,12 @@ function renderClientBody() {
       [['ps', 'PowerShell'], ['cmd', 'CMD'], ['bash', 'macOS / Linux']].map(([k, l]) =>
         '<button data-shell="' + k + '" class="' + (k === shell ? 'active' : '') + '">' + l + '</button>').join('') +
       '</div>';
-    html += '<label class="check small" style="margin:8px 0"><input type="checkbox" id="persistChk"' + (CLIENT_PERSIST ? ' checked' : '') + '> Назавжди (а не лише для цього вікна терміналу)</label>';
+    html += '<label class="check small" style="margin:8px 0"><input type="checkbox" id="persistChk"' + (CLIENT_PERSIST ? ' checked' : '') + '> <span>Назавжди (а не лише для цього вікна терміналу)</span></label>';
     html += codeBlock('envCode', shell === 'bash' ? 'bash / zsh' : (shell === 'ps' ? 'PowerShell' : 'CMD'), envScript(c.env, shell, CLIENT_PERSIST, v));
   }
   if (c.file) {
     html += '<div class="step-title">' + (c.env && c.env.length ? 'Спосіб 2 — файл налаштувань' : 'Файл налаштувань') + '</div>';
-    html += '<p class="hint" style="margin:0 0 6px">Створи або відкрий файл <code>' + esc(c.file.path) + '</code> (на Windows <code>~</code> — це <code>C:\\Users\\&lt;ім\'я&gt;</code>) і встав:</p>';
+    html += '<p class="hint" style="margin:0 0 6px">' + t('Створи або відкрий файл {path} (на Windows {tilde} — це {home}) і встав:', { path: '<code>' + esc(c.file.path) + '</code>', tilde: '<code>~</code>', home: '<code>C:\\Users\\&lt;' + esc(t("ім'я")) + '&gt;</code>' }) + '</p>';
     html += codeBlock('fileCode', c.file.path, fillVars(c.file.content, v));
   }
   body.innerHTML = html;
@@ -642,10 +895,13 @@ $('clientSearch').addEventListener('input', renderClientList);
 
 // ---------- MODELS ----------
 const OFFICIAL_MODELS = [
+  { id: 'claude-opus-5-5', label: 'Opus 5.5' },
+  { id: 'claude-sonnet-5-5', label: 'Sonnet 5.5' },
   { id: 'claude-fable-5-1', label: 'Fable 5.1' },
+  { id: 'claude-haiku-4-5', label: 'Haiku 4.5' },
+  { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 (20251001)' },
   { id: 'claude-opus-5', label: 'Opus 5' },
   { id: 'claude-sonnet-5', label: 'Sonnet 5' },
-  { id: 'claude-haiku-4-5', label: 'Haiku 4.5' },
   { id: 'claude-fable-5', label: 'Fable 5' },
   { id: 'claude-opus-4-8', label: 'Opus 4.8' },
   { id: 'claude-opus-4-7', label: 'Opus 4.7' },
@@ -656,25 +912,146 @@ const OFFICIAL_MODELS = [
 const TIER_SELECTS = { haiku: 'tierHaiku', sonnet: 'tierSonnet', opus: 'tierOpus', fast: 'tierFast', main: 'tierMain', max: 'tierMax' };
 let ROUTING_MODE = 'tiers';
 let MAP_ROWS = [];
+let CUSTOM_POINTS = []; // [{label, model, to}] — user rows of the exact swaps list
+// What the form showed right after it was filled from the server (see
+// routingFormState). Save writes only what differs from it, so a change made
+// meanwhile elsewhere (floating switcher, quick switch, auto-switch, another
+// window, a test script) is never overwritten with stale form values.
+let MODELS_SNAP = null;
+let MODELS_LOADED = ''; // the server routing (JSON) the form was filled from
+let MODELS_GEN = 0; // bumped on every fill; older status answers are ignored
 
 async function refreshModels() {
   await collectModelOptions();
   let routing = {};
   try { routing = (await getConfig()).routing || {}; } catch (e) { /* defaults */ }
-  const tiers = routing.tiers || {};
-  for (const [k, id] of Object.entries(TIER_SELECTS)) populateModelSelect($(id), tiers[k] || '', '— не вказано —');
   populateModelSelect($('applyAllTiersSelect'), '', '— обери модель —');
+  populateModelSelect($('cpTo'), '', '— за рівнем —');
+  fillModelsForm(routing);
+  refreshRoutingStrategy();
+}
+
+// Fill the form from a routing config and remember what it shows.
+function fillModelsForm(routing) {
+  const tiers = routing.tiers || {};
+  // Empty universal tiers follow their Claude counterpart (see universalTier in routing.go).
+  const follows = { fast: 'Haiku', main: 'Sonnet', max: 'Opus' };
+  for (const [k, id] of Object.entries(TIER_SELECTS)) {
+    populateModelSelect($(id), tiers[k] || '', follows[k] ? t('— як {t} —', { t: follows[k] }) : '— не вказано —');
+  }
   populateModelSelect($('defaultModel'), routing.defaultModel || '', '— не вказано —');
   $('unmappedStrategySelect').value = routing.unmappedStrategy || 'smart';
   setRoutingMode(routing.mode === 'table' ? 'table' : 'tiers');
 
-  const mm = routing.modelMap || {};
+  // An empty target is a removed row (see applyRoutingEdits).
+  const mm = {};
+  for (const [k, v] of Object.entries(routing.modelMap || {})) { if (v) mm[k] = v; }
   const officialIds = new Set(OFFICIAL_MODELS.map((m) => m.id));
+  CUSTOM_POINTS = (routing.customPoints || []).filter((c) => c.model && !officialIds.has(c.model))
+    .map((c) => ({ label: c.label || c.model, model: c.model, to: mm[c.model] || '' }));
+  const customIds = new Set(CUSTOM_POINTS.map((c) => c.model));
+  if (routing.mode === 'table') {
+    MAP_ROWS = Object.keys(mm).map((k) => ({ from: k, to: mm[k] }));
+  } else {
+    // Swaps that are neither official nor custom rows (older configs) are
+    // kept as custom rows so they stay visible and editable.
+    for (const k of Object.keys(mm)) {
+      if (!officialIds.has(k) && !customIds.has(k)) CUSTOM_POINTS.push({ label: k, model: k, to: mm[k] });
+    }
+    MAP_ROWS = [];
+  }
   renderOfficialList(mm);
-  MAP_ROWS = Object.keys(mm).filter((k) => routing.mode === 'table' || !officialIds.has(k)).map((k) => ({ from: k, to: mm[k] }));
-  if (routing.mode === 'table') MAP_ROWS = Object.keys(mm).map((k) => ({ from: k, to: mm[k] }));
+  renderCustomPoints();
   renderMapTable();
-  refreshRoutingStrategy();
+  MODELS_SNAP = routingFormState();
+  MODELS_LOADED = JSON.stringify(routing);
+  MODELS_GEN++;
+}
+
+// The routing as the form represents it: the model map is the official
+// swaps + custom rows (mode "tiers") or the table rows (mode "table").
+function routingFormState() {
+  const s = {
+    mode: ROUTING_MODE,
+    unmappedStrategy: $('unmappedStrategySelect').value,
+    defaultModel: cleanModelName($('defaultModel').value),
+    tiers: {},
+    map: Object.create(null),
+    points: CUSTOM_POINTS.map((c) => ({ label: c.label, model: c.model })),
+  };
+  for (const [k, id] of Object.entries(TIER_SELECTS)) s.tiers[k] = cleanModelName($(id).value);
+  if (ROUTING_MODE === 'table') {
+    MAP_ROWS.forEach((row) => { if (row.from && row.to) s.map[row.from] = row.to; });
+  } else {
+    document.querySelectorAll('[data-official]').forEach((sel) => {
+      const v = cleanModelName(sel.value);
+      if (v) s.map[sel.dataset.official] = v;
+    });
+    CUSTOM_POINTS.forEach((c) => { if (c.to) s.map[c.model] = c.to; });
+  }
+  return s;
+}
+
+// What the user changed between two form states (null = nothing): each
+// field, tier, model-map key and custom row separately.
+function routingEdits(base, cur) {
+  const e = { tiers: {}, map: Object.create(null), points: [], dropPoints: [] };
+  let n = 0;
+  for (const f of ['mode', 'unmappedStrategy', 'defaultModel']) {
+    if (cur[f] !== base[f]) { e[f] = cur[f]; n++; }
+  }
+  for (const k of Object.keys(cur.tiers)) {
+    if (cur.tiers[k] !== base.tiers[k]) { e.tiers[k] = cur.tiers[k]; n++; }
+  }
+  for (const k of Object.keys(base.map)) {
+    if (!(k in cur.map)) { e.map[k] = ''; n++; }
+  }
+  for (const k of Object.keys(cur.map)) {
+    if (cur.map[k] !== base.map[k]) { e.map[k] = cur.map[k]; n++; }
+  }
+  const low = (c) => String(c.model).toLowerCase();
+  const had = new Map(base.points.map((c) => [low(c), c.label]));
+  const has = new Set(cur.points.map(low));
+  e.points = cur.points.filter((c) => had.get(low(c)) !== c.label);
+  e.dropPoints = base.points.map(low).filter((m) => !has.has(m));
+  n += e.points.length + e.dropPoints.length;
+  return n ? e : null;
+}
+
+// Apply the user's edits on top of the server's current routing.
+function applyRoutingEdits(r, e) {
+  if ('mode' in e) r.mode = e.mode;
+  if ('unmappedStrategy' in e) r.unmappedStrategy = e.unmappedStrategy;
+  if ('defaultModel' in e) { r.defaultModel = e.defaultModel; r.defaultProviderId = ''; }
+  r.tiers = Object.assign(r.tiers || {}, e.tiers);
+  // The server merges modelMap into the saved one, so a removed row is sent
+  // as an empty target (routing skips those) — a missing key would stay.
+  r.modelMap = Object.assign(r.modelMap || {}, e.map);
+  const low = (c) => String(c.model || '').toLowerCase();
+  const pts = (r.customPoints || []).filter((c) => e.dropPoints.indexOf(low(c)) < 0);
+  e.points.forEach((c) => {
+    const old = pts.find((p) => low(p) === low(c));
+    if (old) old.label = c.label; else pts.push({ label: c.label, model: c.model });
+  });
+  r.customPoints = pts;
+}
+
+// The form may hold unsaved work: changed values, a half-filled table row,
+// or a control the user is on right now.
+function modelsFormBusy() {
+  if (!MODELS_SNAP || routingEdits(MODELS_SNAP, routingFormState())) return true;
+  if (MAP_ROWS.some((r) => !r.from || !r.to)) return true;
+  const a = document.activeElement;
+  return !!(a && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName) && a.closest('#page-models'));
+}
+
+// Routing changed on the server while the Models page is open (floating
+// switcher, quick switch, auto-switch…): show it, unless the user is editing.
+// gen is MODELS_GEN when the status request started.
+function syncModelsForm(routing, gen) {
+  if (!routing || gen !== MODELS_GEN || !$('page-models').classList.contains('active')) return;
+  if (JSON.stringify(routing) === MODELS_LOADED || modelsFormBusy()) return;
+  fillModelsForm(routing);
 }
 
 function setRoutingMode(mode) {
@@ -699,6 +1076,21 @@ document.querySelectorAll('#routingMode button').forEach((b) => {
   });
 });
 
+// What the tier rule gives a model name (shown in the empty option of an
+// exact swap, so "follow the tier" is not a mystery).
+function tierLabelFor(id) {
+  const low = String(id || '').toLowerCase();
+  const pick = (sel) => cleanModelName($(sel) && $(sel).value);
+  let m = '';
+  if (low.indexOf('claude') === 0) {
+    if (low.indexOf('haiku') >= 0) m = pick('tierHaiku');
+    else if (low.indexOf('sonnet') >= 0) m = pick('tierSonnet');
+    else if (low.indexOf('opus') >= 0) m = pick('tierOpus');
+  }
+  if (!m) m = pick('defaultModel');
+  return m ? t('— за рівнем: {m} —', { m: m }) : '— за рівнем —';
+}
+
 function renderOfficialList(mm) {
   const box = $('official-list');
   box.innerHTML = '';
@@ -708,11 +1100,54 @@ function renderOfficialList(mm) {
     row.innerHTML = '<span class="alias-id">' + esc(m.label) + '</span>' +
       '<span class="mono small muted">' + esc(m.id) + '</span>' +
       '<span class="alias-arrow">→</span>' +
-      '<select data-official="' + esc(m.id) + '" style="margin-left:auto"></select>';
-    populateModelSelect(row.querySelector('select'), mm[m.id] || '', '— за рівнем —');
+      '<select data-official="' + esc(m.id) + '"></select>';
+    populateModelSelect(row.querySelector('select'), mm[m.id] || '', tierLabelFor(m.id));
     box.appendChild(row);
   }
 }
+
+function renderCustomPoints() {
+  const box = $('custom-points');
+  box.innerHTML = '';
+  if (!CUSTOM_POINTS.length) {
+    box.innerHTML = '<div class="empty small">Своїх рядків ще немає — додай нижче будь-яку назву моделі, яку надсилає програма.</div>';
+  }
+  CUSTOM_POINTS.forEach((c, i) => {
+    const row = document.createElement('div');
+    row.className = 'alias-item custom';
+    row.innerHTML = '<span class="alias-id" title="' + esc(c.label) + '">' + esc(c.label) + '</span>' +
+      '<span class="mono small muted">' + esc(c.model) + '</span>' +
+      '<span class="alias-arrow">→</span>' +
+      '<select></select>' +
+      '<button class="btn btn-mini btn-danger btn-icon" title="Видалити рядок">' + ic('x', 'i-sm') + '</button>';
+    const sel = row.querySelector('select');
+    populateModelSelect(sel, c.to || '', tierLabelFor(c.model));
+    sel.addEventListener('change', () => { CUSTOM_POINTS[i].to = cleanModelName(sel.value); });
+    row.querySelector('button').addEventListener('click', () => {
+      CUSTOM_POINTS.splice(i, 1);
+      renderCustomPoints();
+      msg($('tiers-msg'), 'Видалено — натисни «Зберегти»', true);
+    });
+    box.appendChild(row);
+  });
+}
+
+$('cpAdd').addEventListener('click', () => {
+  const model = $('cpModel').value.trim();
+  const label = $('cpLabel').value.trim() || model;
+  if (!model) { msg($('tiers-msg'), 'Вкажи назву моделі, яку надсилає програма', false); return; }
+  const low = model.toLowerCase();
+  if (OFFICIAL_MODELS.some((m) => m.id === low) || CUSTOM_POINTS.some((c) => c.model.toLowerCase() === low)) {
+    msg($('tiers-msg'), t('Модель {m} вже є у списку', { m: model }), false);
+    return;
+  }
+  CUSTOM_POINTS.push({ label: label, model: model, to: cleanModelName($('cpTo').value) });
+  $('cpModel').value = '';
+  $('cpLabel').value = '';
+  $('cpTo').value = '';
+  renderCustomPoints();
+  msg($('tiers-msg'), 'Додано — натисни «Зберегти»', true);
+});
 
 function renderMapTable() {
   const box = $('mapTable');
@@ -726,7 +1161,7 @@ function renderMapTable() {
     row.className = 'map-row';
     row.innerHTML = '<input class="mono" placeholder="назва від програми, напр. gpt-4o або claude-*" value="' + esc(r.from) + '">' +
       '<span class="alias-arrow">→</span><select></select>' +
-      '<button class="btn btn-mini btn-danger" title="Видалити рядок">✕</button>';
+      '<button class="btn btn-mini btn-danger btn-icon" title="Видалити рядок">' + ic('x', 'i-sm') + '</button>';
     const [inp, sel, del] = [row.querySelector('input'), row.querySelector('select'), row.querySelector('button')];
     populateModelSelect(sel, r.to, '— обери модель —');
     inp.addEventListener('input', () => { MAP_ROWS[i].from = inp.value.trim(); });
@@ -740,43 +1175,40 @@ $('mapAdd').addEventListener('click', () => { MAP_ROWS.push({ from: '', to: '' }
 $('btnSaveTiers').addEventListener('click', async () => {
   const bad = ROUTING_MODE === 'table' && MAP_ROWS.find((r) => (r.from && !r.to) || (!r.from && r.to));
   if (bad) { msg($('tiers-msg'), 'Заповни обидві колонки в кожному рядку (або видали порожній рядок)', false); return; }
+  if (!MODELS_SNAP) return; // not filled yet — nothing of the user's to save
+  const cur = routingFormState();
+  const edits = routingEdits(MODELS_SNAP, cur);
   try {
+    // Only what was changed on this page is written; every other field
+    // keeps the server's current value (3-way merge against MODELS_SNAP).
     await saveConfig((cfg) => {
-      const r = cfg.routing = cfg.routing || {};
-      r.mode = ROUTING_MODE;
-      r.unmappedStrategy = $('unmappedStrategySelect').value;
-      r.defaultModel = cleanModelName($('defaultModel').value);
-      r.defaultProviderId = '';
-      r.tiers = r.tiers || {};
-      for (const [k, id] of Object.entries(TIER_SELECTS)) r.tiers[k] = cleanModelName($(id).value);
-      const mm = {};
-      if (ROUTING_MODE === 'table') {
-        MAP_ROWS.forEach((row) => { if (row.from && row.to) mm[row.from] = row.to; });
-      } else {
-        document.querySelectorAll('[data-official]').forEach((s) => {
-          const v = cleanModelName(s.value);
-          if (v) mm[s.dataset.official] = v;
-        });
-      }
-      r.modelMap = mm;
+      if (!edits) return false;
+      applyRoutingEdits(cfg.routing = cfg.routing || {}, edits);
     });
+    // Show the saved result, unless the form was edited again meanwhile.
+    let fresh = null;
+    try { fresh = (await getConfig()).routing || {}; } catch (e) { /* keep the form */ }
+    if (fresh && !routingEdits(cur, routingFormState())) fillModelsForm(fresh);
+    else MODELS_SNAP = cur;
     msg($('tiers-msg'), 'Збережено — діє одразу ✓', true);
     toast('Правила моделей збережено ✓');
   } catch (e) {
-    msg($('tiers-msg'), 'Не збережено: ' + e.message, false);
+    msg($('tiers-msg'), t('Не збережено: {e}', { e: e.message }), false);
   }
 });
 
 $('btnApplyAllTiers').addEventListener('click', async () => {
   const v = cleanModelName($('applyAllTiersSelect').value);
   if (!v) { toast('Спочатку обери модель зі списку', true); return; }
-  if (!confirmDo('Призначити ' + v + ' для всіх рівнів і як модель за замовчуванням?')) return;
+  if (!confirmDo(t('Призначити {m} для всіх рівнів, точкових підмін і як модель за замовчуванням?', { m: v }))) return;
   if (await applyModelEverywhere(v, $('tiers-msg'))) refreshModels();
 });
 
 $('btnResetAllOfficial').addEventListener('click', () => {
   if (!confirmDo('Скинути всі точкові підміни офіційних імен? (Збережеться після «Зберегти».)')) return;
   document.querySelectorAll('[data-official]').forEach((s) => { s.value = ''; });
+  CUSTOM_POINTS.forEach((c) => { c.to = ''; });
+  renderCustomPoints();
   msg($('tiers-msg'), 'Скинуто — натисни «Зберегти»', true);
 });
 
@@ -793,9 +1225,9 @@ async function refreshRoutingStrategy() {
 async function setRoutingStrategy(strategy) {
   try {
     await mgmt('PUT', 'routing/strategy', { value: strategy });
-    msg($('strat-msg'), 'Збережено: ' + (strategy === 'fill-first' ? 'спочатку перший акаунт' : 'по черзі'), true);
+    msg($('strat-msg'), t('Збережено: {v}', { v: t(strategy === 'fill-first' ? 'спочатку перший акаунт' : 'по черзі') }), true);
   } catch (e) {
-    msg($('strat-msg'), 'Не збережено: ' + e.message, false);
+    msg($('strat-msg'), t('Не збережено: {e}', { e: e.message }), false);
     refreshRoutingStrategy();
   }
 }
@@ -831,7 +1263,7 @@ async function renderVgProviders() {
   el.innerHTML = items.map((p) => {
     const isAccount = String(p.baseUrl || '').indexOf('embedded://') === 0;
     const models = (p.models || []).slice(0, 4).join(', ');
-    const more = (p.models || []).length > 4 ? ' +ще ' + (p.models.length - 4) : '';
+    const more = (p.models || []).length > 4 ? ' ' + t('+ще {n}', { n: p.models.length - 4 }) : '';
     const off = p.enabled === false;
     return '<div class="prov-card' + (off ? ' off' : '') + '">' +
       '<div class="prov-avatar">' + esc((p.label || p.id || '?').trim().charAt(0).toUpperCase()) + '</div>' +
@@ -840,11 +1272,11 @@ async function renderVgProviders() {
       (isAccount ? ' <span class="badge account">АКАУНТ</span>' : ' <span class="badge openai">OPENAI</span>') +
       (off ? ' <span class="chip">вимк.</span>' : '') + '</div>' +
       '<div class="prov-url mono">' + esc(isAccount ? 'вбудований рушій (OAuth)' : (p.baseUrl || '')) + '</div>' +
-      '<div class="prov-meta"><span><b>' + (p.models || []).length + '</b> моделей</span>' +
+      '<div class="prov-meta"><span>' + t('{n} моделей', { n: '<b>' + (p.models || []).length + '</b>' }) + '</span>' +
       '<span class="mono">' + esc(models) + esc(more) + '</span></div>' +
       '</div>' +
       '<div class="prov-actions">' +
-      '<button class="btn btn-mini ' + (off ? 'btn-accent' : 'btn-warn') + '" data-toggle-vg="' + esc(p.id) + '">' + (off ? '▶ Увімкнути' : '⏸ Вимкнути') + '</button>' +
+      '<button class="btn btn-mini ' + (off ? 'btn-accent' : 'btn-warn') + '" data-toggle-vg="' + esc(p.id) + '">' + (off ? ic('play', 'i-sm') + t('Увімкнути') : ic('pause', 'i-sm') + t('Вимкнути')) + '</button>' +
       '<button class="btn btn-mini btn-danger" data-del="' + esc(p.id) + '" data-account="' + (isAccount ? '1' : '') + '">Прибрати</button>' +
       '</div></div>';
   }).join('');
@@ -857,18 +1289,18 @@ async function renderVgProviders() {
           p.enabled = p.enabled === false;
         });
         renderVgProviders();
-      } catch (e) { toast('Не збережено: ' + e.message, true); }
+      } catch (e) { toast(t('Не збережено: {e}', { e: e.message }), true); }
     });
   });
   el.querySelectorAll('[data-del]').forEach((b) => {
     b.addEventListener('click', async () => {
-      if (!confirmDo('Прибрати «' + b.dataset.del + '» зі списку? (Сам акаунт залишиться на сторінці «Акаунти».)')) return;
+      if (!confirmDo(t('Прибрати «{name}» зі списку? (Сам акаунт залишиться на сторінці «Акаунти».)', { name: b.dataset.del }))) return;
       try {
         if (b.dataset.account) await api('/account-provider/hide', { method: 'POST', body: JSON.stringify({ id: b.dataset.del }) });
         await saveConfig((cfg) => { cfg.providers = (cfg.providers || []).filter((x) => x.id !== b.dataset.del); });
         toast('Прибрано');
         renderVgProviders();
-      } catch (e) { toast('Не збережено: ' + e.message, true); }
+      } catch (e) { toast(t('Не збережено: {e}', { e: e.message }), true); }
     });
   });
 }
@@ -918,7 +1350,7 @@ async function renderProvList() {
   try {
     items = await fetchCompatList();
   } catch (e) {
-    el.innerHTML = '<div class="empty">Рушій недоступний: ' + esc(e.message) + '</div>';
+    el.innerHTML = '<div class="empty">' + esc(t('Рушій недоступний: {e}', { e: e.message })) + '</div>';
     return;
   }
   if (!items.length) {
@@ -927,7 +1359,7 @@ async function renderProvList() {
   }
   el.innerHTML = items.map((p) => {
     const models = (p.models || []).map((m) => m.alias || m.name);
-    const shown = models.slice(0, 5).join(', ') + (models.length > 5 ? ' +ще ' + (models.length - 5) : '');
+    const shown = models.slice(0, 5).join(', ') + (models.length > 5 ? ' ' + t('+ще {n}', { n: models.length - 5 }) : '');
     const keys = (p['api-key-entries'] || []).length;
     const off = !!p.disabled;
     const preset = presetByUrl(p['base-url']);
@@ -939,25 +1371,25 @@ async function renderProvList() {
       (p.prefix ? ' <span class="chip">prefix: ' + esc(p.prefix) + '</span>' : '') +
       (off ? ' <span class="chip err">вимкнено</span>' : ' <span class="chip ok">активний</span>') + '</div>' +
       '<div class="prov-url mono">' + esc(p['base-url'] || '') + '</div>' +
-      '<div class="prov-meta"><span><b>' + models.length + '</b> моделей</span><span><b>' + keys + '</b> ключ(ів)</span>' +
+      '<div class="prov-meta"><span>' + t('{n} моделей', { n: '<b>' + models.length + '</b>' }) + '</span><span>' + t('{n} ключ(ів)', { n: '<b>' + keys + '</b>' }) + '</span>' +
       '<span class="mono">' + esc(shown) + '</span></div>' +
       '</div>' +
       '<div class="prov-actions">' +
-      '<button class="btn btn-mini" data-edit="' + esc(p.name) + '">✎ Редагувати</button>' +
-      '<button class="btn btn-mini ' + (off ? 'btn-accent' : 'btn-warn') + '" data-toggle="' + esc(p.name) + '" data-off="' + (off ? '1' : '0') + '">' + (off ? '▶ Увімкнути' : '⏸ Вимкнути') + '</button>' +
-      '<button class="btn btn-mini btn-danger" data-name="' + esc(p.name) + '">🗑</button>' +
+      '<button class="btn btn-mini" data-edit="' + esc(p.name) + '">' + ic('edit', 'i-sm') + 'Редагувати</button>' +
+      '<button class="btn btn-mini ' + (off ? 'btn-accent' : 'btn-warn') + '" data-toggle="' + esc(p.name) + '" data-off="' + (off ? '1' : '0') + '">' + (off ? ic('play', 'i-sm') + t('Увімкнути') : ic('pause', 'i-sm') + t('Вимкнути')) + '</button>' +
+      '<button class="btn btn-mini btn-danger" data-name="' + esc(p.name) + '">' + ic('trash', 'i-sm') + '</button>' +
       '</div></div>';
   }).join('');
   el.querySelectorAll('[data-name]').forEach((b) => {
     b.addEventListener('click', async () => {
-      if (!window.confirm('Видалити провайдера ' + b.dataset.name + '?')) return;
+      if (!window.confirm(t('Видалити провайдера {name}?', { name: b.dataset.name }))) return;
       try {
         await mgmt('DELETE', 'openai-compatibility?name=' + encodeURIComponent(b.dataset.name));
         toast('Провайдера видалено');
         if (PROV_EDITING === b.dataset.name) resetProvForm();
         renderProvList();
         collectModelOptions();
-      } catch (e) { toast('Помилка: ' + e.message, true); }
+      } catch (e) { toast(t('Помилка: {e}', { e: e.message }), true); }
     });
   });
   el.querySelectorAll('[data-toggle]').forEach((b) => {
@@ -967,7 +1399,7 @@ async function renderProvList() {
         await mgmt('PATCH', 'openai-compatibility', { name: b.dataset.toggle, value: { disabled: !off } });
         toast(off ? 'Провайдера увімкнено ✓' : 'Провайдера вимкнено');
         renderProvList();
-      } catch (e) { toast('Помилка: ' + e.message, true); }
+      } catch (e) { toast(t('Помилка: {e}', { e: e.message }), true); }
     });
   });
   el.querySelectorAll('[data-edit]').forEach((b) => {
@@ -1013,10 +1445,10 @@ function renderPresetGrid() {
   grid.innerHTML = list.map((p) => {
     const have = existing.has(p.url.replace(/\/+$/, '').toLowerCase());
     return '<button class="preset-card' + (have ? ' have' : '') + '" data-preset="' + esc(p.id) + '" title="' + esc(p.url) + '">' +
-      '<span class="preset-avatar g-' + esc(p.group) + '">' + esc(p.label.charAt(0).toUpperCase()) + '</span>' +
+      '<span class="preset-avatar g-' + esc(p.group) + '">' + esc(t(p.label).charAt(0).toUpperCase()) + '</span>' +
       '<span class="preset-body"><span class="preset-label">' + esc(p.label) + '</span>' +
       '<span class="preset-url">' + esc(p.url.replace(/^https?:\/\//, '')) + '</span></span>' +
-      (have ? '<span class="preset-have">✓</span>' : '') +
+      (have ? '<span class="preset-have">' + ic('check', 'i-sm') + '</span>' : '') +
       '</button>';
   }).join('');
   grid.querySelectorAll('[data-preset]').forEach((b) => {
@@ -1043,9 +1475,9 @@ function applyPreset(id) {
   $('prov-key').value = '';
   const hint = $('preset-hint');
   let html = '<b>' + esc(p.label) + '</b>';
-  if (p.hint) html += ' — ' + esc(p.hint);
+  if (p.hint) html += ' — ' + esc(t(p.hint));
   if (p.keyUrl) html += ' <a href="' + esc(p.keyUrl) + '" target="_blank" rel="noopener">Отримати ключ ↗</a>';
-  if (/<[A-Z_]+>/.test(p.url)) html += '<br><span class="warn">⚠ Заміни плейсхолдер у Base URL на своє значення.</span>';
+  if (/<[A-Z_]+>/.test(p.url)) html += '<br><span class="warn">' + ic('alert', 'i-sm') + ' Заміни плейсхолдер у Base URL на своє значення.</span>';
   hint.innerHTML = html;
   hint.style.display = '';
   $('prov-key').focus();
@@ -1132,29 +1564,29 @@ async function saveProvider() {
     const list = await fetchCompatList();
     if (PROV_EDITING) {
       const prev = list.find((x) => x.name === PROV_EDITING);
-      if (!prev) throw new Error('провайдера ' + PROV_EDITING + ' більше немає');
-      if (f.name !== PROV_EDITING && list.some((x) => x.name === f.name)) throw new Error('назва ' + f.name + ' вже зайнята');
+      if (!prev) throw new Error(t('провайдера {name} більше немає', { name: PROV_EDITING }));
+      if (f.name !== PROV_EDITING && list.some((x) => x.name === f.name)) throw new Error(t('назва {name} вже зайнята', { name: f.name }));
       const value = toCompatEntry(f, prev);
       await mgmt('PATCH', 'openai-compatibility', { name: PROV_EDITING, value: {
         name: value.name, 'base-url': value['base-url'], 'api-key-entries': value['api-key-entries'],
         models: value.models, prefix: f.prefix, headers: f.headers,
       } });
       msg($('prov-msg'), 'зміни збережено ✓', true);
-      toast('Провайдера ' + f.name + ' оновлено ✓');
+      toast(t('Провайдера {name} оновлено ✓', { name: f.name }));
     } else {
-      if (list.some((x) => x.name === f.name)) throw new Error('назва ' + f.name + ' вже зайнята — обери іншу або відредагуй наявного');
+      if (list.some((x) => x.name === f.name)) throw new Error(t('назва {name} вже зайнята — обери іншу або відредагуй наявного', { name: f.name }));
       const next = list.map(compatForWrite);
       next.push(toCompatEntry(f, null));
       await mgmt('PUT', 'openai-compatibility', next);
       msg($('prov-msg'), 'провайдера додано ✓', true);
-      toast('Провайдера ' + f.name + ' додано ✓ (' + f.models.length + ' моделей)');
+      toast(t('Провайдера {name} додано ✓ ({n} моделей)', { name: f.name, n: f.models.length }));
     }
     resetProvForm();
     await renderProvList();
     renderPresetGrid();
     collectModelOptions();
   } catch (e) {
-    msg($('prov-msg'), 'не вдалось: ' + e.message, false);
+    msg($('prov-msg'), t('не вдалось: {e}', { e: e.message }), false);
   } finally {
     btn.disabled = false;
   }
@@ -1162,7 +1594,7 @@ async function saveProvider() {
 
 function startEditProvider(p) {
   PROV_EDITING = p.name;
-  $('prov-form-title').textContent = 'Редагувати провайдера: ' + p.name;
+  $('prov-form-title').textContent = t('Редагувати провайдера: {name}', { name: p.name });
   $('prov-form-hint').textContent = 'зміни підхопляться рушієм одразу';
   $('prov-name').value = p.name || '';
   $('prov-url').value = p['base-url'] || '';
@@ -1200,7 +1632,7 @@ async function fetchProviderModels() {
   if (!/^https?:\/\//.test(f.baseUrl)) { msg(out, 'спочатку вкажи Base URL', false); return; }
   const btn = $('prov-fetch-models');
   btn.disabled = true;
-  out.textContent = 'запитую ' + f.baseUrl + '/models …';
+  out.textContent = t('запитую {url} …', { url: f.baseUrl + '/models' });
   out.className = 'msg';
   try {
     const r = await api('/provider-models', {
@@ -1215,9 +1647,9 @@ async function fetchProviderModels() {
     const aliasByName = {};
     existing.forEach((m) => { if (m.alias && m.alias !== m.name) aliasByName[m.name] = m.alias; });
     $('prov-models').value = models.map((m) => aliasByName[m] ? m + '=' + aliasByName[m] : m).join(String.fromCharCode(10));
-    msg(out, 'отримано ' + models.length + ' моделей ✓ (можна видалити зайві)', true);
+    msg(out, t('отримано {n} моделей ✓ (можна видалити зайві)', { n: models.length }), true);
   } catch (e) {
-    msg(out, 'не вдалось: ' + e.message, false);
+    msg(out, t('не вдалось: {e}', { e: e.message }), false);
   } finally {
     btn.disabled = false;
   }
@@ -1244,10 +1676,118 @@ const OAUTH_PROVIDERS = [
 
 let oauthTimer = null;
 
+// Extra account types from the engine's official plugin store. The plugin is
+// downloaded and loaded on first use (no restart needed).
+const PLUGIN_ACCOUNTS = [
+  { id: 'gemini-cli', plugin: 'gemini-cli', provider: 'gemini-cli', label: 'Gemini CLI', kind: 'oauth', badge: 'Безкоштовно', badgeClass: 'free', tip: 'Звичайний Google-акаунт через вхід Gemini CLI — окремі від Antigravity безкоштовні ліміти.' },
+  { id: 'kiro', plugin: 'kiro', provider: 'kiro', label: 'Kiro (AWS)', kind: 'oauth', badge: 'Безкоштовно', badgeClass: 'free', tip: 'Акаунт Kiro / AWS Builder ID → моделі Claude. Після натискання введи показаний код підтвердження на сторінці AWS.' },
+  { id: 'mirasim', plugin: 'mirasim', provider: 'mirasim', label: 'Mirasim', kind: 'oauth', badge: 'Акаунт', badgeClass: 'freemium', tip: 'Акаунт Mirasim → моделі Claude і GPT.' },
+  { id: 'clinepass', plugin: 'clinepassbridge', label: 'Cline Pass', kind: 'console', badge: 'Підписка', badgeClass: 'sub', tip: 'Підписка Cline Pass. Відкриється консоль плагіна: додай API-ключ Cline Pass і завантаж моделі.' },
+  { id: 'commandcode', plugin: 'commandcode', label: 'CommandCode', kind: 'apikey', badge: 'API-ключ', badgeClass: 'sub', tip: 'Ключ commandcode.ai (user_…) → моделі DeepSeek і GLM (commandcode/…).' },
+  { id: 'vertex', label: 'Vertex AI', kind: 'vertex', badge: 'Google Cloud', badgeClass: 'sub', tip: 'JSON-ключ сервісного акаунта Google Cloud з увімкненим Vertex AI. Оплата — за тарифами Google Cloud.' },
+  { id: 'copilot', label: 'GitHub Copilot', kind: 'unavailable', badge: 'Немає для Windows', badgeClass: 'sub', tip: 'Плагін Copilot поки випускається лише для Linux — на Windows його неможливо встановити.' },
+  { id: 'cursor', label: 'Cursor', kind: 'unavailable', badge: 'Немає для Windows', badgeClass: 'sub', tip: 'Плагін Cursor поки випускається лише для Linux — на Windows його неможливо встановити.' },
+];
+
+function renderPluginButtons() {
+  const box = $('plugin-buttons');
+  if (!box) return;
+  box.innerHTML = PLUGIN_ACCOUNTS.map((p) => {
+    const verb = p.kind === 'oauth' ? t('{name} — увійти', { name: p.label })
+      : p.kind === 'vertex' ? t('{name} — імпорт JSON', { name: p.label })
+        : p.kind === 'unavailable' ? p.label : t('{name} — додати', { name: p.label });
+    return '<div class="oauth-btn-wrap">' +
+      '<button class="btn btn-sm" data-plugin-acc="' + esc(p.id) + '"' + (p.kind === 'unavailable' ? ' disabled' : '') + '>' + esc(verb) + '</button>' +
+      '<span class="oauth-badge ' + p.badgeClass + '">' + esc(p.badge) + '</span>' +
+      '<span class="help-tip" data-tip="' + esc(p.tip) + '">?</span></div>';
+  }).join('');
+  box.querySelectorAll('[data-plugin-acc]').forEach((b) => b.addEventListener('click', () => pluginAccount(b.dataset.pluginAcc, b)));
+}
+
+function pluginStatus(text, cls) {
+  const st = $('oauth-status');
+  st.textContent = text;
+  st.className = 'msg' + (cls ? ' ' + cls : '');
+}
+
+// Install (once) and load a store plugin; resolves when the engine has it.
+async function ensurePlugin(id, label) {
+  const list = async () => ((await mgmt('GET', 'plugins')) || {}).plugins || [];
+  let cur = (await list()).find((x) => x.id === id);
+  if (cur && cur.registered) return;
+  if (!cur) {
+    if (!confirmDo(t('Встановити плагін «{name}» з магазину плагінів рушія? Це сторонній код із GitHub, він працюватиме всередині CarteLink.', { name: label }))) throw new Error(t('Скасовано'));
+    pluginStatus(t('Завантажую плагін {name}…', { name: label }));
+    await mgmt('POST', 'plugin-store/' + encodeURIComponent(id) + '/install', {});
+  } else if (!cur.enabled) {
+    await mgmt('PATCH', 'plugins/' + encodeURIComponent(id) + '/enabled', { enabled: true });
+  }
+  for (let i = 0; i < 20; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    cur = (await list()).find((x) => x.id === id);
+    if (cur && cur.registered) return;
+  }
+  throw new Error(t('Плагін {name} не запустився — подивись app.log', { name: label }));
+}
+
+async function pluginAccount(accId, btn) {
+  const p = PLUGIN_ACCOUNTS.find((x) => x.id === accId);
+  if (!p || p.kind === 'unavailable') return;
+  if (p.kind === 'vertex') { $('vertex-file').click(); return; }
+  btn.disabled = true;
+  try {
+    await ensurePlugin(p.plugin, p.label);
+    if (p.kind === 'oauth') {
+      await startOauth(p.provider);
+    } else if (p.kind === 'console') {
+      const url = location.origin + '/v0/resource/plugins/' + p.plugin + '/console';
+      const st = $('oauth-status');
+      st.innerHTML = '<a href="' + esc(url) + '" target="_blank" style="color:var(--accent-2)">' + esc(t('Відкрити консоль {name} ↗', { name: p.label })) + '</a> ' +
+        '<span class="hint">' + esc(t('додай там API-ключ і завантаж моделі — вони з’являться у списках')) + '</span>';
+      st.className = 'msg ok';
+      window.open(url, '_blank');
+    } else if (p.kind === 'apikey') {
+      const key = (window.prompt(t('Встав API-ключ {name}:', { name: p.label })) || '').trim();
+      if (!key) { pluginStatus(''); return; }
+      const cfg = (await mgmt('GET', 'plugins/' + p.plugin + '/config')) || {};
+      const keys = Array.isArray(cfg.api_keys) ? cfg.api_keys.filter((k) => k && k.key !== key) : [];
+      keys.push({ key: key, weight: 10 });
+      await mgmt('PATCH', 'plugins/' + p.plugin + '/config', { api_keys: keys });
+      pluginStatus(t('Ключ {name} додано ✓ — моделі з’являться у списках за хвилину', { name: p.label }), 'ok');
+      setTimeout(collectModelOptions, 3000);
+    }
+  } catch (e) {
+    pluginStatus(t('Не вдалось: {e}', { e: e.message }), 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+$('vertex-file').addEventListener('change', async () => {
+  const f = $('vertex-file').files[0];
+  $('vertex-file').value = '';
+  if (!f) return;
+  const loc = (window.prompt(t('Регіон Vertex AI (Enter — us-central1):'), 'us-central1') || 'us-central1').trim();
+  const fd = new FormData();
+  fd.append('file', f);
+  fd.append('location', loc);
+  pluginStatus(t('Імпортую {name}…', { name: f.name }));
+  try {
+    const r = await fetch('/api/cliproxy/api/vertex/import', { method: 'POST', body: fd });
+    const j = await r.json().catch(() => null);
+    if (!r.ok) throw new Error((j && (j.error || j.message)) || ('HTTP ' + r.status));
+    pluginStatus(t('Vertex AI підключено ✓ ({p})', { p: (j && j.project_id) || f.name }), 'ok');
+    refreshCliproxy();
+  } catch (e) {
+    pluginStatus(t('Не вдалось: {e}', { e: e.message }), 'err');
+  }
+});
+
 function renderOauthButtons() {
+  renderPluginButtons();
   $('oauth-buttons').innerHTML = OAUTH_PROVIDERS
     .map((p) => '<div class="oauth-btn-wrap">' +
-      '<button class="btn btn-sm" data-p="' + p.id + '">' + p.label + ' — увійти</button>' +
+      '<button class="btn btn-sm" data-p="' + p.id + '">' + t('{name} — увійти', { name: p.label }) + '</button>' +
       '<span class="oauth-badge ' + p.badgeClass + '">' + p.badge + '</span>' +
       '<span class="help-tip" data-tip="' + esc(p.tip) + '">?</span>' +
       '</div>')
@@ -1264,7 +1804,7 @@ async function startOauth(provider) {
     st.className = 'msg err';
     return;
   }
-  st.textContent = 'Запускаю вхід ' + provider + '…';
+  st.textContent = t('Запускаю вхід {name}…', { name: provider });
   st.className = 'msg';
   try {
     const r = await fetch('/api/cliproxy/oauth/start', {
@@ -1278,14 +1818,17 @@ async function startOauth(provider) {
       j = text ? JSON.parse(text) : null;
     } catch (parseErr) { /* non-json response */ }
     if (!r.ok || !j || !j.url) {
-      st.textContent = (j && (j.error || j.message)) || text || ('Не вдалось (' + r.status + ')');
+      st.textContent = (j && (j.error || j.message)) || text || t('Не вдалось ({code})', { code: r.status });
       st.className = 'msg err';
       return;
     }
-    st.innerHTML = '<a href="' + esc(j.url) + '" target="_blank" style="color:var(--accent-2)">Відкрити сторінку входу ↗</a>';
+    let code = '';
+    try { code = new URL(j.url, location.href).searchParams.get('user_code') || ''; } catch (e) { /* no code */ }
+    st.innerHTML = '<a href="' + esc(j.url) + '" target="_blank" style="color:var(--accent-2)">Відкрити сторінку входу ↗</a>' +
+      (code ? ' <span class="device-code">' + esc(t('Код підтвердження: {code}', { code: code })) + '</span>' : '');
     if (j.state) pollOauth(j.state);
   } catch (e) {
-    st.textContent = 'Помилка: ' + e.message;
+    st.textContent = t('Помилка: {e}', { e: e.message });
     st.className = 'msg err';
   }
 }
@@ -1331,7 +1874,7 @@ function pollOauth(state) {
           return;
         }
         clearInterval(oauthTimer);
-        st.textContent = 'вхід не вдався: ' + (j.error || status);
+        st.textContent = t('вхід не вдався: {e}', { e: j.error || status });
         st.className = 'msg err';
       }
     } catch (e) { /* transient */ }
@@ -1361,7 +1904,7 @@ async function renderNativeList() {
   try {
     const arr = await fetchNativeKeys(nativeTab);
     if (!arr.length) {
-      el.innerHTML = '<span class="muted">' + esc(nativeLabels[nativeTab]) + ': ключів ще немає</span>';
+      el.innerHTML = '<span class="muted">' + esc(t('{name}: ключів ще немає', { name: nativeLabels[nativeTab] })) + '</span>';
       return;
     }
     el.innerHTML = arr.map((k, i) => {
@@ -1373,7 +1916,7 @@ async function renderNativeList() {
     }).join('');
     el.querySelectorAll('.del').forEach((d) => {
       d.addEventListener('click', async () => {
-        if (!confirmDo('Видалити цей ' + nativeLabels[nativeTab] + ' ключ?')) return;
+        if (!confirmDo(t('Видалити цей {name} ключ?', { name: nativeLabels[nativeTab] }))) return;
         try {
           const cur = await fetchNativeKeys(nativeTab);
           const target = arr[Number(d.dataset.idx)];
@@ -1382,11 +1925,11 @@ async function renderNativeList() {
           else await mgmt('DELETE', nativeTab + '?api-key=' + encodeURIComponent(target['api-key']));
           toast('Ключ видалено');
           renderNativeList();
-        } catch (e) { toast('Не вдалось: ' + e.message, true); }
+        } catch (e) { toast(t('Не вдалось: {e}', { e: e.message }), true); }
       });
     });
   } catch (e) {
-    el.innerHTML = '<span class="muted">недоступно: ' + esc(e.message) + '</span>';
+    el.innerHTML = '<span class="muted">' + esc(t('недоступно: {e}', { e: e.message })) + '</span>';
   }
 }
 
@@ -1402,11 +1945,11 @@ async function addNativeKey() {
     await mgmt('PUT', nativeTab, cur.map(nativeForWrite).concat([entry]));
     $('native-key').value = '';
     $('native-url').value = '';
-    msg($('native-msg'), nativeLabels[nativeTab] + ' ключ додано ✓', true);
+    msg($('native-msg'), t('{name} ключ додано ✓', { name: nativeLabels[nativeTab] }), true);
     renderNativeList();
     collectModelOptions();
   } catch (e) {
-    msg($('native-msg'), 'не вдалось: ' + e.message, false);
+    msg($('native-msg'), t('не вдалось: {e}', { e: e.message }), false);
   }
 }
 
@@ -1424,7 +1967,143 @@ $('native-add').addEventListener('click', addNativeKey);
 async function refreshCliproxy() {
   try { await loadStatus(); } catch (e) { /* keep old */ }
   await renderAuthFiles();
+  renderAccountModels();
 }
+
+// ---- account models: hide (oauth-excluded-models) / add (oauth-model-alias) ----
+// Providers whose accounts support extra model names in the engine.
+const NO_ALIAS_PROVIDERS = { gemini: true };
+const MODEL_SUGGEST = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1', 'claude-haiku-4-5', 'claude-opus-5', 'claude-sonnet-5', 'gpt-5.5', 'gemini-3.8-pro'];
+
+async function fetchExcluded() {
+  const r = await mgmt('GET', 'oauth-excluded-models');
+  return (r && r['oauth-excluded-models']) || {};
+}
+async function fetchAliases() {
+  const r = await mgmt('GET', 'oauth-model-alias');
+  return (r && r['oauth-model-alias']) || {};
+}
+async function patchExcluded(prov, list) {
+  try {
+    await mgmt('PATCH', 'oauth-excluded-models', { provider: prov, models: list });
+  } catch (e) {
+    if (list.length) throw e; // empty list on a provider without entries answers 404 — fine
+  }
+}
+async function patchAliases(prov, list) {
+  try {
+    await mgmt('PATCH', 'oauth-model-alias', { channel: prov, aliases: list });
+  } catch (e) {
+    if (list.length) throw e;
+  }
+}
+
+// The engine re-registers models a moment after a change; refresh twice.
+function afterModelChange() {
+  const run = async () => { await collectModelOptions(); renderAccountModels(true); };
+  setTimeout(run, 700);
+  setTimeout(run, 2500);
+}
+
+let AM_BUSY = false;
+async function renderAccountModels(noFetch) {
+  const box = $('acct-models');
+  if (!box) return;
+  if (!noFetch) await collectModelOptions();
+  const provs = Array.from(new Set(AUTH_FILES.map((f) => (f.provider || f.type || '').toLowerCase()).filter(Boolean))).sort();
+  if (!provs.length) {
+    box.innerHTML = '<div class="empty">Спочатку підключи акаунт.</div>';
+    return;
+  }
+  let excluded = {};
+  let aliases = {};
+  try { [excluded, aliases] = await Promise.all([fetchExcluded(), fetchAliases()]); } catch (e) {
+    box.innerHTML = '<div class="empty">' + esc(t('Недоступно: {e}', { e: e.message })) + '</div>';
+    return;
+  }
+  box.innerHTML = '';
+  for (const prov of provs) {
+    const models = MODELS_BY_PROV[prov] || [];
+    const hid = excluded[prov] || [];
+    const al = aliases[prov] || [];
+    const aliasSet = new Set(al.map((a) => String(a.alias).toLowerCase()));
+    const block = document.createElement('div');
+    block.className = 'am-block';
+    let html = '<div class="am-head"><b>◆ ' + esc(provTitle(prov)) + '</b> <span class="muted small">' +
+      esc(t('{n} моделей у списках', { n: models.length })) + '</span></div>';
+    html += '<div class="am-chips">' + (models.length ? models.map((id) => {
+      const isAlias = aliasSet.has(id.toLowerCase());
+      const src = isAlias ? (al.find((a) => String(a.alias).toLowerCase() === id.toLowerCase()) || {}).name : '';
+      return '<span class="model-chip am' + (isAlias ? ' custom' : '') + '"' +
+        (isAlias ? ' title="' + esc(t('своя назва → {m}', { m: src })) + '"' : '') + '>' + esc(id) +
+        (isAlias ? ' <i class="am-src">→ ' + esc(src) + '</i>' : '') +
+        '<b class="am-x" data-am-' + (isAlias ? 'unalias' : 'hide') + '="' + esc(id) + '" title="' +
+        (isAlias ? 'Видалити свою назву' : 'Сховати модель') + '">✕</b></span>';
+    }).join('') : '<span class="muted small">Рушій ще не повідомив моделі цього акаунта.</span>') + '</div>';
+    if (hid.length) {
+      html += '<div class="am-sub">Сховані <span class="hint">(клікни, щоб повернути)</span></div><div class="am-chips">' +
+        hid.map((id) => '<span class="model-chip blacklisted" data-am-unhide="' + esc(id) + '" title="Повернути">↺ ' + esc(id) + '</span>').join('') + '</div>';
+    }
+    if (!NO_ALIAS_PROVIDERS[prov] && models.length) {
+      const bases = models.filter((id) => !aliasSet.has(id.toLowerCase()));
+      html += '<div class="am-add">' +
+        '<input class="mono" data-am-new placeholder="нова назва, напр. claude-opus-5-5" list="am-suggest">' +
+        '<span class="alias-arrow">→</span>' +
+        '<select data-am-base>' + bases.map((id) => '<option value="' + esc(id) + '">' + esc(id) + '</option>').join('') + '</select>' +
+        '<button class="btn btn-sm btn-accent" data-am-add>' + ic('plus', 'i-sm') + 'Додати модель</button></div>';
+    }
+    block.innerHTML = html;
+    const act = async (fn, okText) => {
+      if (AM_BUSY) return;
+      AM_BUSY = true;
+      try { await fn(); toast(okText); afterModelChange(); } catch (e) { toast(t('Не вдалось: {e}', { e: e.message }), true); } finally { AM_BUSY = false; }
+    };
+    block.querySelectorAll('[data-am-hide]').forEach((b) => b.addEventListener('click', () => {
+      const id = b.dataset.amHide;
+      act(async () => {
+        const cur = (await fetchExcluded())[prov] || [];
+        if (cur.indexOf(id) < 0) cur.push(id);
+        await patchExcluded(prov, cur);
+      }, t('Модель {m} схована ✓', { m: id }));
+    }));
+    block.querySelectorAll('[data-am-unhide]').forEach((b) => b.addEventListener('click', () => {
+      const id = b.dataset.amUnhide;
+      act(async () => {
+        const cur = ((await fetchExcluded())[prov] || []).filter((x) => x !== id);
+        await patchExcluded(prov, cur);
+      }, t('Модель {m} повернуто ✓', { m: id }));
+    }));
+    block.querySelectorAll('[data-am-unalias]').forEach((b) => b.addEventListener('click', () => {
+      const id = b.dataset.amUnalias;
+      if (!confirmDo(t('Видалити свою назву моделі {m}?', { m: id }))) return;
+      act(async () => {
+        const cur = ((await fetchAliases())[prov] || []).filter((a) => String(a.alias).toLowerCase() !== id.toLowerCase());
+        await patchAliases(prov, cur);
+      }, t('Назву {m} видалено ✓', { m: id }));
+    }));
+    const addBtn = block.querySelector('[data-am-add]');
+    if (addBtn) addBtn.addEventListener('click', () => {
+      const name = block.querySelector('[data-am-new]').value.trim();
+      const base = block.querySelector('[data-am-base]').value;
+      if (!name) { toast('Вкажи нову назву моделі', true); return; }
+      if (!/^[A-Za-z0-9._:\/-]+$/.test(name)) { toast('Назва: лише латиниця, цифри та . _ - / :', true); return; }
+      if (models.some((id) => id.toLowerCase() === name.toLowerCase())) { toast(t('Модель {m} вже є у списку', { m: name }), true); return; }
+      act(async () => {
+        const cur = (await fetchAliases())[prov] || [];
+        cur.push({ name: base, alias: name, fork: true });
+        await patchAliases(prov, cur);
+      }, t('Модель {m} додано ✓ (відповідає {b})', { m: name, b: base }));
+    });
+    box.appendChild(block);
+  }
+  if (!$('am-suggest')) {
+    const dl = document.createElement('datalist');
+    dl.id = 'am-suggest';
+    dl.innerHTML = MODEL_SUGGEST.map((m) => '<option value="' + esc(m) + '">').join('');
+    document.body.appendChild(dl);
+  }
+}
+$('am-refresh').addEventListener('click', () => renderAccountModels());
 
 let accountSyncBusy = false;
 
@@ -1435,7 +2114,7 @@ async function renderAuthFiles() {
     const resp = await mgmt('GET', 'auth-files');
     arr = Array.isArray(resp) ? resp : ((resp && resp.files) || []);
   } catch (e) {
-    el.innerHTML = '<div class="empty">Недоступно: ' + esc(e.message) + '</div>';
+    el.innerHTML = '<div class="empty">' + esc(t('Недоступно: {e}', { e: e.message })) + '</div>';
     return;
   }
   AUTH_FILES = arr;
@@ -1453,10 +2132,10 @@ async function renderAuthFiles() {
     return '<div class="auth-file-item">' +
       '<span class="st ' + (ok ? 'ok' : 'bad') + '"></span>' +
       '<span class="af-name"><b>' + esc(f.provider || f.type || 'account') + '</b> · ' + esc(name) + '</span>' +
-      '<span class="chip ' + (ok ? '' : 'err') + '">' + esc(status) + '</span>' +
+      '<span class="chip ' + (ok ? 'ok' : 'err') + '">' + esc(status) + '</span>' +
       '<div class="af-actions">' +
-      (authIndex && !ok ? '<button class="btn btn-mini btn-ghost" data-reset-quota="' + esc(authIndex) + '" data-name="' + esc(name) + '" title="Зняти блокування після ліміту (429)">⚡ Скинути ліміт</button>' : '') +
-      (provider ? '<button class="btn btn-mini btn-warn" data-reauth="' + esc(provider) + '" data-name="' + esc(name) + '" title="Увійти в цей акаунт заново">↻ Увійти знову</button>' : '') +
+      (authIndex && !ok ? '<button class="btn btn-mini btn-ghost" data-reset-quota="' + esc(authIndex) + '" data-name="' + esc(name) + '" title="Зняти блокування після ліміту (429)">' + ic('zap', 'i-sm') + 'Скинути ліміт</button>' : '') +
+      (provider ? '<button class="btn btn-mini btn-warn" data-reauth="' + esc(provider) + '" data-name="' + esc(name) + '" title="Увійти в цей акаунт заново">' + ic('rotate', 'i-sm') + 'Увійти знову</button>' : '') +
       '<button class="btn btn-mini btn-danger" data-delete-account="' + esc(fileKey) + '" data-name="' + esc(name) + '" title="Видалити акаунт">🗑</button>' +
       '</div></div>';
   }).join('');
@@ -1484,17 +2163,17 @@ async function renderAuthFiles() {
       b.disabled = true;
       try {
         await mgmt('POST', 'reset-quota', { auth_index: b.dataset.resetQuota });
-        toast('Ліміт для ' + b.dataset.name + ' скинуто ✓');
+        toast(t('Ліміт для {name} скинуто ✓', { name: b.dataset.name }));
         renderAuthFiles();
       } catch (e) {
-        toast('Не вдалось: ' + e.message, true);
+        toast(t('Не вдалось: {e}', { e: e.message }), true);
         b.disabled = false;
       }
     });
   });
   el.querySelectorAll('[data-reauth]').forEach((b) => {
     b.addEventListener('click', () => {
-      toast('Вхід для ' + b.dataset.name + '…');
+      toast(t('Вхід для {name}…', { name: b.dataset.name }));
       startOauth(b.dataset.reauth);
     });
   });
@@ -1503,7 +2182,7 @@ async function renderAuthFiles() {
       const fileId = b.dataset.deleteAccount;
       const nm = b.dataset.name;
       if (!fileId) { toast('Не знайдено файл акаунта', true); return; }
-      if (!confirmDo('Видалити акаунт ' + (nm || fileId) + '? Щоб повернути, доведеться увійти знову.')) return;
+      if (!confirmDo(t('Видалити акаунт {name}? Щоб повернути, доведеться увійти знову.', { name: nm || fileId }))) return;
       b.disabled = true;
       try {
         await mgmt('DELETE', 'auth-files?name=' + encodeURIComponent(fileId));
@@ -1516,11 +2195,11 @@ async function renderAuthFiles() {
           cfg.providers = (cfg.providers || []).filter((p) => p.id !== pid);
           if (cfg.providers.length === before) return false;
         }).catch(() => {});
-        toast('Акаунт ' + nm + ' видалено ✓');
+        toast(t('Акаунт {name} видалено ✓', { name: nm }));
         await renderAuthFiles();
         collectModelOptions();
       } catch (e) {
-        toast('Не вдалось видалити: ' + e.message, true);
+        toast(t('Не вдалось видалити: {e}', { e: e.message }), true);
         b.disabled = false;
       }
     });
@@ -1554,11 +2233,11 @@ async function renderClipKeys() {
           const l = Array.isArray(cur) ? cur : (cur && cur['api-keys']) || [];
           await mgmt('PUT', 'api-keys', l.filter((x) => x !== d.dataset.key));
           renderClipKeys();
-        } catch (e) { toast('Не вдалось: ' + e.message, true); }
+        } catch (e) { toast(t('Не вдалось: {e}', { e: e.message }), true); }
       });
     });
   } catch (e) {
-    el.innerHTML = '<span class="muted">недоступно: ' + esc(e.message) + '</span>';
+    el.innerHTML = '<span class="muted">' + esc(t('недоступно: {e}', { e: e.message })) + '</span>';
   }
 }
 
@@ -1574,7 +2253,7 @@ async function addClipKey() {
     msg($('clip-msg'), 'ключ додано ✓', true);
     renderClipKeys();
   } catch (e) {
-    msg($('clip-msg'), 'не вдалось: ' + e.message, false);
+    msg($('clip-msg'), t('не вдалось: {e}', { e: e.message }), false);
   }
 }
 $('clip-key-add').addEventListener('click', addClipKey);
@@ -1595,20 +2274,91 @@ async function refreshMetrics() {
   const successRate = totalRequests > 0 ? Math.round((totalSuccess / totalRequests) * 100) : 100;
 
   $('metric-total-tokens').textContent = fmtNum(s.total_tokens || 0);
-  $('metric-total-reqs').textContent = totalRequests.toLocaleString() + ' запитів';
+  $('metric-total-reqs').textContent = t('{n} запитів', { n: totalRequests.toLocaleString() });
   $('metric-input-tokens').textContent = fmtNum(s.total_input || 0);
-  $('metric-cached-tokens').textContent = fmtNum(s.total_cached || 0) + ' з кешу';
+  $('metric-cached-tokens').textContent = t('{n} з кешу', { n: fmtNum(s.total_cached || 0) });
   $('metric-output-tokens').textContent = fmtNum(s.total_output || 0);
-  $('metric-reasoning-tokens').textContent = fmtNum(s.total_reasoning || 0) + ' на міркування';
+  $('metric-reasoning-tokens').textContent = t('{n} на міркування', { n: fmtNum(s.total_reasoning || 0) });
   $('metric-success-rate').textContent = successRate + '%';
-  $('metric-success-counts').textContent = totalSuccess + ' успішних / ' + totalFailed + ' помилок';
+  $('metric-success-counts').textContent = t('{ok} успішних / {bad} помилок', { ok: totalSuccess, bad: totalFailed });
 
+  renderActivityChart($('metricsChart'), $('metricsChartAxis'), s.history || []);
   renderAccountsQuotaTable(authFiles);
   renderModelsUsageTable(s.model_stats || {});
   renderRecentRequestsTable((s.history || []).slice(0, 50));
 }
 
-$('usage-refresh').addEventListener('click', refreshMetrics);
+$('usage-refresh').addEventListener('click', () => { refreshMetrics(); refreshErrors(); });
+
+// ---------- error log ----------
+let ERRORS_CACHE = [];
+
+function errorHint(e) {
+  const st = e.status;
+  const m = String(e.message || '').toLowerCase();
+  if (e.kind === 'gateway' && st === 403) return 'Увійди через Telegram (Налаштування → Доступ).';
+  if (e.kind === 'gateway' && st === 503) return 'Шлюз на паузі — натисни «Запустити» на Головній.';
+  if (m.indexOf('blacklist') >= 0) return 'Модель у чорному списку (Налаштування).';
+  if (e.kind === 'auto') return 'Повернути модель можна на сторінці «Акаунти» → моделі акаунта.';
+  if (m.indexOf('invalid_model_id') >= 0) return 'Акаунт не має доступу до цієї моделі (тариф) — CarteLink сховав її для цього типу акаунтів.';
+  if (st === 401) return 'Ключ у програмі не збігається з ключем CarteLink — скопіюй ключ з Головної.';
+  if (st === 429 || m.indexOf('quota') >= 0 || m.indexOf('rate') >= 0) return 'Ліміт акаунта: зачекай, додай ще акаунтів або скинь ліміт у Статистиці.';
+  if (m.indexOf('content_filter') >= 0 || m.indexOf('content filter') >= 0)
+    return 'Фільтр провайдера відхилив вміст запиту (часто — через AGENTS.md чи системний промпт, які програма додає сама). Ключ лишається робочим.';
+  if (m.indexOf('auth_unavailable') >= 0 && m.indexOf('last upstream error') >= 0)
+    return 'Акаунт на короткій паузі після попередньої помилки — дивись рядок нижче, там справжня причина.';
+  if (m.indexOf('unknown provider') >= 0 || m.indexOf('not found') >= 0 || m.indexOf('not supported') >= 0 || m.indexOf('no auth') >= 0 || m.indexOf('unavailable') >= 0)
+    return 'Цієї моделі немає у підключених акаунтах — обери іншу на сторінці «Моделі».';
+  if (st === 400) return 'Провайдер відхилив запит (формат або параметри) — спробуй іншу модель.';
+  if (st >= 500) return 'Збій на боці провайдера або мережі — зазвичай минає сам; повтори пізніше.';
+  return '';
+}
+
+function fmtTime(ms) {
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, '0');
+  return pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+}
+
+async function refreshErrors() {
+  const box = $('errors-table');
+  if (!box) return;
+  let r;
+  try { r = await api('/errors?limit=200'); } catch (e) { return; }
+  ERRORS_CACHE = (r && r.errors) || [];
+  $('errors-count').textContent = ERRORS_CACHE.length ? t('{n} записів', { n: r.total || ERRORS_CACHE.length }) : '';
+  if (!ERRORS_CACHE.length) {
+    box.innerHTML = '<div class="empty">' + ic('check', 'i-lg') + '<div>Помилок немає</div></div>';
+    return;
+  }
+  box.innerHTML = '<div class="table-wrap"><table class="data-table err-table"><thead><tr>' +
+    '<th>Час</th><th>Код</th><th>Модель</th><th>Що сталось</th></tr></thead><tbody>' +
+    ERRORS_CACHE.map((e) => {
+      const hint = errorHint(e);
+      const model = e.model ? esc(e.model) + (e.resolved ? ' <span class="muted">→ ' + esc(e.resolved) + '</span>' : '') : '<span class="muted">—</span>';
+      return '<tr><td class="nowrap small">' + esc(fmtTime(e.t)) + (e.count > 1 ? ' <span class="chip">×' + e.count + '</span>' : '') + '</td>' +
+        '<td>' + (e.kind === 'auto' ? '<span class="chip">CarteLink</span>'
+          : '<span class="chip err">' + esc(e.status) + '</span>' + (e.kind === 'gateway' ? ' <span class="chip">CarteLink</span>' : '')) + '</td>' +
+        '<td class="mono small">' + model + '</td>' +
+        '<td class="small"><div class="err-msg">' + esc(e.message) + '</div>' +
+        (hint ? '<div class="err-hint">' + ic('bulb', 'i-sm') + '<span>' + esc(t(hint)) + '</span></div>' : '') +
+        '<div class="muted tiny">' + esc((e.method || '') + ' ' + (e.path || '')) + (e.client ? ' · ' + esc(e.client) : '') + '</div></td></tr>';
+    }).join('') + '</tbody></table></div>';
+}
+
+$('btnErrorsRefresh').addEventListener('click', refreshErrors);
+$('btnErrorsClear').addEventListener('click', async () => {
+  if (!confirmDo('Очистити журнал помилок?')) return;
+  try { await api('/errors/clear', { method: 'POST' }); refreshErrors(); toast('Журнал очищено ✓'); } catch (e) { toast(t('Не вдалось: {e}', { e: e.message }), true); }
+});
+$('btnErrorsExport').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(ERRORS_CACHE, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'cartelink-errors-' + new Date().toISOString().slice(0, 10) + '.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+});
 $('btnMetricsClear').addEventListener('click', async () => {
   if (!confirmDo('Скинути всю збережену статистику? Це не можна відмінити.')) return;
   try {
@@ -1616,18 +2366,212 @@ $('btnMetricsClear').addEventListener('click', async () => {
     await refreshMetrics();
     toast('Статистику очищено ✓');
   } catch (e) {
-    toast('Не вдалось: ' + e.message, true);
+    toast(t('Не вдалось: {e}', { e: e.message }), true);
   }
 });
 
+// ---------- system prompt page ----------
+// Capabilities come from the engine's own model catalogue, so reasoning
+// settings are offered only where they actually work.
+let MODEL_CAPS = null;
+
+async function loadModelCaps() {
+  try { MODEL_CAPS = ((await api('/model-info')) || {}).models || {}; } catch (e) { MODEL_CAPS = MODEL_CAPS || {}; }
+  return MODEL_CAPS;
+}
+
+function capsOf(model) {
+  const caps = MODEL_CAPS || {};
+  const k = cleanModelName(String(model || '')).toLowerCase();
+  if (caps[k]) return caps[k];
+  const slash = k.lastIndexOf('/');
+  if (slash >= 0 && caps[k.slice(slash + 1)]) return caps[k.slice(slash + 1)];
+  const par = k.indexOf('(');
+  if (par > 0 && caps[k.slice(0, par).trim()]) return caps[k.slice(0, par).trim()];
+  return null;
+}
+
+// The models actually in play right now: the routing targets plus both presets.
+function modelsInUse(cfg, sw) {
+  const r = (cfg && cfg.routing) || {};
+  const t = r.tiers || {};
+  const list = [t.haiku, t.sonnet, t.opus, t.fast, t.main, t.max, r.defaultModel,
+    sw && sw.model1, sw && sw.model2].concat(Object.values(r.modelMap || {}));
+  return [...new Set(list.map((m) => cleanModelName(m || '')).filter(Boolean))];
+}
+
+function renderThinkingSupport(models) {
+  const box = $('pr-th-support');
+  if (!box) return;
+  if (!models.length) {
+    box.innerHTML = '<span class="muted small">' + esc(t('Спочатку обери моделі на сторінці «Моделі».')) + '</span>';
+    return;
+  }
+  box.innerHTML = models.map((m) => {
+    const c = capsOf(m);
+    const can = !!(c && c.thinking);
+    const levels = c && c.levels && c.levels.length;
+    const how = !c ? t('невідомо') : !c.thinking ? t('не підтримує')
+      : levels && c.max ? t('бюджет + зусилля') : levels ? t('зусилля') : t('бюджет думання');
+    return '<span class="model-chip am' + (can ? '' : ' off') + '" title="' + esc(how) + '">' +
+      (can ? ic('check', 'i-sm') : ic('x', 'i-sm')) + esc(m) + ' <i class="am-src">' + esc(how) + '</i></span>';
+  }).join('');
+}
+
+async function refreshPrompt() {
+  let cfg = null;
+  let sw = null;
+  try { cfg = await getConfig(); } catch (e) { return; }
+  fillPromptForm(cfg);
+  try { sw = await api('/switcher'); } catch (e) { /* optional */ }
+  await loadModelCaps();
+  renderThinkingSupport(modelsInUse(cfg, sw));
+}
+
+// What the page showed when it was filled: Save writes only the fields that
+// differ from it, like the Models page.
+let PROMPT_SNAP = null;
+
+function promptFormState() {
+  return {
+    enabled: $('pr-enabled').checked,
+    mode: $('pr-mode').value,
+    scope: $('pr-scope').value,
+    text: $('pr-text').value,
+    agentMd: $('pr-md').value,
+    agentMdEnabled: $('pr-md-on').checked,
+    thEnabled: $('pr-th-on').checked,
+    thLevel: $('pr-th-level').value,
+    thBudget: parseInt($('pr-th-budget').value, 10) || 0,
+    thOverride: $('pr-th-override').checked,
+  };
+}
+
+function fillPromptForm(cfg) {
+  const p = cfg.prompting || {};
+  const th = p.thinking || {};
+  $('pr-enabled').checked = !!p.enabled;
+  $('pr-text').value = p.text || '';
+  $('pr-mode').value = p.mode || 'prepend';
+  $('pr-scope').value = p.scope || 'all';
+  $('pr-md').value = p.agentMd || '';
+  $('pr-md-on').checked = !!p.agentMdEnabled;
+  $('pr-md-name').textContent = p.agentMdName || t('файл не завантажено');
+  delete $('pr-md-name').dataset.name;
+  $('pr-th-on').checked = !!th.enabled;
+  $('pr-th-level').value = th.level || 'medium';
+  $('pr-th-budget').value = th.budget || '';
+  $('pr-th-override').checked = !!th.override;
+  paintPromptSize();
+  paintPromptBadge(!!p.enabled);
+  PROMPT_SNAP = promptFormState();
+}
+
+// Same fields, same values.
+function sameFields(a, b) {
+  return Object.keys(a).every((k) => a[k] === b[k]);
+}
+
+function paintPromptSize() {
+  const chars = ($('pr-text').value || '').length + ($('pr-md-on').checked ? ($('pr-md').value || '').length : 0);
+  $('pr-size').textContent = t('{n} символів · ~{k} токенів', { n: chars.toLocaleString(), k: Math.round(chars / 3.6).toLocaleString() });
+  $('pr-size').style.display = chars ? '' : 'none';
+}
+
+function paintPromptBadge(on) {
+  const b = $('navPromptBadge');
+  if (b) b.style.display = on ? '' : 'none';
+}
+
+['pr-text', 'pr-md'].forEach((id) => $(id).addEventListener('input', paintPromptSize));
+$('pr-md-on').addEventListener('change', paintPromptSize);
+
+$('pr-md-pick').addEventListener('click', () => $('pr-md-file').click());
+$('pr-md-file').addEventListener('change', async () => {
+  const f = $('pr-md-file').files[0];
+  $('pr-md-file').value = '';
+  if (!f) return;
+  if (f.size > 512 * 1024) { msg($('pr-msg'), t('Файл завеликий — до 512 КБ'), false); return; }
+  $('pr-md').value = await f.text();
+  $('pr-md-on').checked = true;
+  $('pr-md-name').textContent = f.name;
+  $('pr-md-name').dataset.name = f.name;
+  paintPromptSize();
+  msg($('pr-msg'), t('{name} завантажено — натисни «Зберегти»', { name: f.name }), true);
+});
+$('pr-md-clear').addEventListener('click', () => {
+  $('pr-md').value = '';
+  $('pr-md-on').checked = false;
+  $('pr-md-name').textContent = t('файл не завантажено');
+  delete $('pr-md-name').dataset.name;
+  paintPromptSize();
+});
+
+$('pr-save').addEventListener('click', async () => {
+  if (!PROMPT_SNAP) return; // not filled yet
+  const base = PROMPT_SNAP;
+  const cur = promptFormState();
+  if (cur.enabled && cur.mode === 'replace' && !confirmDo('Режим «Замінити» прибирає системний промпт програми. Продовжити?')) return;
+  const nm = $('pr-md-name').dataset.name;
+  try {
+    const r = await saveConfig((cfg) => {
+      const p = cfg.prompting = cfg.prompting || {};
+      const th = p.thinking = p.thinking || {};
+      // Only the fields changed on this page; the rest keeps the server's value.
+      const set = (obj, field, k) => { if (cur[k] !== base[k]) obj[field] = cur[k]; };
+      set(p, 'enabled', 'enabled');
+      set(p, 'mode', 'mode');
+      set(p, 'scope', 'scope');
+      set(p, 'text', 'text');
+      set(p, 'agentMd', 'agentMd');
+      set(p, 'agentMdEnabled', 'agentMdEnabled');
+      if (nm) p.agentMdName = nm;
+      if (!p.agentMd) { p.agentMdEnabled = false; p.agentMdName = ''; }
+      set(th, 'enabled', 'thEnabled');
+      set(th, 'level', 'thLevel');
+      set(th, 'budget', 'thBudget');
+      set(th, 'override', 'thOverride');
+    });
+    // Show the saved result, unless the form was edited again meanwhile.
+    let fresh = null;
+    try { fresh = await getConfig(); } catch (e) { /* keep the form */ }
+    if (fresh && sameFields(cur, promptFormState())) fillPromptForm(fresh);
+    else { PROMPT_SNAP = cur; paintPromptBadge(!!(r.cfg.prompting || {}).enabled); }
+    msg($('pr-msg'), 'Збережено — діє одразу ✓', true);
+    toast('Системний промпт збережено ✓');
+  } catch (e) {
+    msg($('pr-msg'), t('Не збережено: {e}', { e: e.message }), false);
+  }
+});
+
+$('pr-enabled').addEventListener('change', () => paintPromptBadge($('pr-enabled').checked));
+
 // ---------- settings page ----------
+// Gateway fields as last filled from the server: Save writes only the ones
+// the user changed (see the Models page).
+let SETTINGS_SNAP = null;
+
+function settingsFormState() {
+  return {
+    host: $('set-host').value.trim() || '127.0.0.1',
+    port: parseInt($('set-port').value, 10),
+    apiKey: $('set-apikey').value.trim(),
+    requireKey: $('set-require').checked,
+  };
+}
+
+function fillSettingsForm(cfg) {
+  $('set-host').value = cfg.cliproxy.host || '127.0.0.1';
+  $('set-port').value = cfg.cliproxy.port || 8317;
+  $('set-apikey').value = cfg.apiKey || '';
+  $('set-require').checked = !!cfg.requireKey;
+  SETTINGS_SNAP = settingsFormState();
+}
+
 async function refreshSettings() {
   try {
     const cfg = await getConfig();
-    $('set-host').value = cfg.cliproxy.host || '127.0.0.1';
-    $('set-port').value = cfg.cliproxy.port || 8317;
-    $('set-apikey').value = cfg.apiKey || '';
-    $('set-require').checked = !!cfg.requireKey;
+    fillSettingsForm(cfg);
     $('set-extra').value = cfg.cliproxy.extraConfigYAML || '';
     renderBlacklistTags(cfg.modelBlacklist || []);
   } catch (e) { /* keep old */ }
@@ -1651,7 +2595,7 @@ async function saveAppSetting(patch) {
     $('set-tray').checked = !!a.closeToTray;
     msg($('set-app-msg'), 'Збережено ✓', true);
   } catch (e) {
-    msg($('set-app-msg'), 'Не збережено: ' + e.message, false);
+    msg($('set-app-msg'), t('Не збережено: {e}', { e: e.message }), false);
     refreshSettings();
   }
 }
@@ -1664,23 +2608,29 @@ $('set-reveal').addEventListener('click', () => {
 });
 
 $('set-save').addEventListener('click', async () => {
-  const port = parseInt($('set-port').value, 10);
+  const form = settingsFormState();
+  const { host, port, apiKey: key, requireKey: require } = form;
   if (!(port >= 1 && port <= 65535)) { msg($('set-msg'), 'Невірний порт', false); return; }
-  const host = $('set-host').value.trim() || '127.0.0.1';
-  const key = $('set-apikey').value.trim();
-  const require = $('set-require').checked;
   if (require && !key) { msg($('set-msg'), 'Ключ не може бути порожнім, коли перевірка увімкнена', false); return; }
   if (!require && host !== '127.0.0.1' && host !== 'localhost' &&
-      !confirmDo('Host ' + host + ' відкриває шлюз для інших пристроїв, а перевірку ключа вимкнено. Точно зберегти?')) return;
+      !confirmDo(t('Host {host} відкриває шлюз для інших пристроїв, а перевірку ключа вимкнено. Точно зберегти?', { host: host }))) return;
+  // Only the fields changed here are written; the rest keeps the server's value.
+  const base = SETTINGS_SNAP || {};
+  const changed = (k) => form[k] !== base[k];
   try {
     const cur = CFG_CACHE || await getConfig();
-    if (cur.apiKey && key !== cur.apiKey && !confirmDo('Змінити API ключ? Старий ключ перестане працювати — його доведеться замінити в усіх програмах.')) return;
+    if (changed('apiKey') && cur.apiKey && key !== cur.apiKey && !confirmDo('Змінити API ключ? Старий ключ перестане працювати — його доведеться замінити в усіх програмах.')) return;
     const r = await saveConfig((cfg) => {
-      cfg.cliproxy.host = host;
-      cfg.cliproxy.port = port;
-      cfg.apiKey = key;
-      cfg.requireKey = require;
+      if (changed('host')) cfg.cliproxy.host = host;
+      if (changed('port')) cfg.cliproxy.port = port;
+      if (changed('apiKey')) cfg.apiKey = key;
+      if (changed('requireKey')) cfg.requireKey = require;
     });
+    // Show the saved values, unless the form was edited again meanwhile.
+    let fresh = null;
+    try { fresh = await getConfig(); } catch (e) { /* keep the form */ }
+    if (fresh && sameFields(form, settingsFormState())) fillSettingsForm(fresh);
+    else SETTINGS_SNAP = form;
     if (r.needsRestart) {
       msg($('set-msg'), 'Збережено. Порт/Host застосуються після перезапуску', true);
       if (confirmDo('Перезапустити шлюз зараз, щоб застосувати новий порт/Host? Не забудь оновити адресу у своїх програмах.')) serverAction('restart');
@@ -1688,7 +2638,7 @@ $('set-save').addEventListener('click', async () => {
       msg($('set-msg'), 'Збережено ✓', true);
     }
   } catch (e) {
-    msg($('set-msg'), 'Не збережено: ' + e.message, false);
+    msg($('set-msg'), t('Не збережено: {e}', { e: e.message }), false);
   }
 });
 
@@ -1699,7 +2649,7 @@ $('btnGenKey').addEventListener('click', async () => {
     $('set-apikey').value = r.key;
     toast('Новий ключ згенеровано ✓ — онови його у своїх програмах');
     refreshSettings();
-  } catch (e) { toast('Не вдалось: ' + e.message, true); }
+  } catch (e) { toast(t('Не вдалось: {e}', { e: e.message }), true); }
 });
 
 $('set-extra-save').addEventListener('click', async () => {
@@ -1707,16 +2657,16 @@ $('set-extra-save').addEventListener('click', async () => {
     await saveConfig((cfg) => { cfg.cliproxy.extraConfigYAML = $('set-extra').value; });
     msg($('set-extra-msg'), 'Збережено ✓ — рушій підхопить зміни сам', true);
   } catch (e) {
-    msg($('set-extra-msg'), 'Не збережено: ' + e.message, false);
+    msg($('set-extra-msg'), t('Не збережено: {e}', { e: e.message }), false);
   }
 });
 
 // ---------- copy buttons (data-copy) ----------
 document.querySelectorAll('[data-copy]').forEach((b) => {
   b.addEventListener('click', () => {
-    const t = $(b.dataset.copy);
-    if (t.id === 'apiKey' && LAST_STATUS && LAST_STATUS.requireKey === false) { copyVal('any'); return; }
-    copyVal(t.value !== undefined && t.tagName !== 'PRE' ? t.value : t.textContent);
+    const el = $(b.dataset.copy);
+    if (el.id === 'apiKey' && LAST_STATUS && LAST_STATUS.requireKey === false) { copyVal('any'); return; }
+    copyVal(el.value !== undefined && el.tagName !== 'PRE' ? el.value : el.textContent);
   });
 });
 
@@ -1731,9 +2681,9 @@ async function removeBlacklistModel(modelId) {
     MODEL_BLACKLIST = (r.cfg.modelBlacklist || []).map((s) => s.toLowerCase().trim());
     renderBlacklistTags(r.cfg.modelBlacklist);
     renderAllModelsCatalog();
-    toast(modelId + ' розблоковано ✓');
+    toast(t('{m} розблоковано ✓', { m: modelId }));
   } catch (e) {
-    toast('Не збережено: ' + e.message, true);
+    toast(t('Не збережено: {e}', { e: e.message }), true);
   }
 }
 
@@ -1749,9 +2699,9 @@ async function addBlacklistModel(modelId) {
     MODEL_BLACKLIST = (r.cfg.modelBlacklist || []).map((s) => s.toLowerCase().trim());
     renderBlacklistTags(r.cfg.modelBlacklist);
     renderAllModelsCatalog();
-    toast(val + ' заблоковано');
+    toast(t('{m} заблоковано', { m: val }));
   } catch (e) {
-    toast('Не збережено: ' + e.message, true);
+    toast(t('Не збережено: {e}', { e: e.message }), true);
   }
 }
 
@@ -1766,7 +2716,7 @@ function renderBlacklistTags(list) {
   for (const item of list) {
     const tag = document.createElement('span');
     tag.className = 'blacklist-tag';
-    tag.title = 'Клікни, щоб видалити ' + item + ' з чорного списку';
+    tag.title = t('Клікни, щоб видалити {m} з чорного списку', { m: item });
     tag.innerHTML = '<span>' + esc(item) + '</span>' +
       '<span class="blacklist-remove" data-id="' + esc(item) + '" title="Видалити з чорного списку">✕</span>';
     tag.addEventListener('click', (e) => {
@@ -1788,7 +2738,7 @@ async function loadAllAvailableModels() {
   const btn = $('set-blacklist-load');
   const filterInput = $('set-blacklist-filter');
   const catalogBox = $('set-blacklist-catalog');
-  if (btn) btn.textContent = '⏳ Завантаження моделей…';
+  if (btn) btn.textContent = 'Завантаження моделей…';
 
   await collectModelOptions();
 
@@ -1829,7 +2779,7 @@ async function loadAllAvailableModels() {
 
   if (filterInput) filterInput.style.display = 'inline-block';
   if (catalogBox) catalogBox.style.display = 'flex';
-  if (btn) btn.textContent = '↻ Оновити весь список (' + ALL_CATALOG_MODELS.length + ')';
+  if (btn) btn.textContent = t('Оновити весь список ({n})', { n: ALL_CATALOG_MODELS.length });
 
   renderAllModelsCatalog();
 }
@@ -1844,12 +2794,12 @@ function renderAllModelsCatalog() {
   const filtered = ALL_CATALOG_MODELS.filter((m) => !q || m.toLowerCase().includes(q));
 
   if (countEl) {
-    countEl.textContent = 'Показано: ' + filtered.length + ' із ' + ALL_CATALOG_MODELS.length;
+    countEl.textContent = t('Показано: {n} із {total}', { n: filtered.length, total: ALL_CATALOG_MODELS.length });
   }
 
   catalogBox.innerHTML = '';
   if (!filtered.length) {
-    catalogBox.innerHTML = '<span class="muted small" style="padding:4px">За запитом «' + esc(q) + '» нічого не знайдено.</span>';
+    catalogBox.innerHTML = '<span class="muted small" style="padding:4px">' + esc(t('За запитом «{q}» нічого не знайдено.', { q: q })) + '</span>';
     return;
   }
 
@@ -1860,7 +2810,7 @@ function renderAllModelsCatalog() {
     chip.title = blacklisted
       ? 'У чорному списку. Клікни, щоб РОЗБЛОКУВАТИ'
       : 'Клікни, щоб ДОДАТИ в чорний список';
-    chip.innerHTML = (blacklisted ? '🚫 ' : '+ ') + esc(m);
+    chip.innerHTML = (blacklisted ? ic('ban', 'i-sm') : ic('plus', 'i-sm')) + esc(m);
     chip.addEventListener('click', () => toggleBlacklistModel(m));
     catalogBox.appendChild(chip);
   }
@@ -1883,7 +2833,7 @@ if ($('set-blacklist-add')) {
     }
     await addBlacklistModel(val);
     input.value = '';
-    msg($('set-blacklist-msg'), 'Модель ' + val + ' додано до чорного списку ✓', true);
+    msg($('set-blacklist-msg'), t('Модель {m} додано до чорного списку ✓', { m: val }), true);
   });
 }
 
@@ -1909,7 +2859,7 @@ function renderAccountsQuotaTable(authFiles) {
     const provider = f.provider || f.type || '—';
     const isError = f.status === 'error' || (f.cooldowns && f.cooldowns.length > 0);
     const statusClass = isError ? 'error' : 'active';
-    const statusText = isError ? '⚠ Ліміт / 429' : '● Активний (OK)';
+    const statusText = isError ? 'Ліміт / 429' : 'Активний (OK)';
     const authIndex = f.auth_index || '';
 
     let errMsg = '';
@@ -1930,7 +2880,7 @@ function renderAccountsQuotaTable(authFiles) {
       '<td><b>' + (f.success || 0) + '</b> / <span style="color:' + (f.failed ? '#ef4444' : 'var(--muted)') + '">' + (f.failed || 0) + '</span></td>' +
       '<td>' +
         (authIndex
-          ? '<button class="btn btn-mini btn-reset-quota" data-auth-index="' + esc(authIndex) + '" data-name="' + esc(name) + '">⚡ Скинути ліміт</button>'
+          ? '<button class="btn btn-mini btn-reset-quota" data-auth-index="' + esc(authIndex) + '" data-name="' + esc(name) + '">' + ic('zap', 'i-sm') + 'Скинути ліміт</button>'
           : '<span class="muted">—</span>') +
       '</td>' +
       '</tr>';
@@ -1945,10 +2895,10 @@ function renderAccountsQuotaTable(authFiles) {
       btn.disabled = true;
       try {
         await mgmt('POST', 'reset-quota', { auth_index: idx });
-        toast('Квоту акаунта ' + nm + ' успішно скинуто ✓');
+        toast(t('Квоту акаунта {name} успішно скинуто ✓', { name: nm }));
         refreshMetrics();
       } catch (e) {
-        toast('Не вдалося скинути квоту: ' + e.message, true);
+        toast(t('Не вдалося скинути квоту: {e}', { e: e.message }), true);
         btn.disabled = false;
       }
     });
@@ -1980,7 +2930,7 @@ function renderModelsUsageTable(modelStats) {
     const m = modelStats[k];
     html += '<tr>' +
       '<td><span class="mono"><b>' + esc(k) + '</b></span></td>' +
-      '<td>' + m.requests + (m.failed ? ' <span style="color:#ef4444">(' + m.failed + ' помилок)</span>' : '') + '</td>' +
+      '<td>' + m.requests + (m.failed ? ' <span style="color:#ef4444">(' + esc(t('{n} помилок', { n: m.failed })) + ')</span>' : '') + '</td>' +
       '<td class="mono">' + fmt(m.input) + '</td>' +
       '<td class="mono">' + fmt(m.cached) + '</td>' +
       '<td class="mono">' + fmt(m.output) + (m.reasoning ? ' <span class="muted">(+' + fmt(m.reasoning) + ')</span>' : '') + '</td>' +
@@ -2009,7 +2959,7 @@ function renderRecentRequestsTable(records) {
     '</tr></thead><tbody>';
 
   for (const r of records) {
-    const t = r.timestamp ? new Date(r.timestamp).toLocaleTimeString() : '—';
+    const ts = r.timestamp ? new Date(r.timestamp).toLocaleTimeString() : '—';
     const src = r.source || r.auth_index || '—';
     const m = r.model || '—';
     const tok = r.tokens || {};
@@ -2019,7 +2969,7 @@ function renderRecentRequestsTable(records) {
     const ok = !r.failed;
 
     html += '<tr>' +
-      '<td class="mono small">' + esc(t) + '</td>' +
+      '<td class="mono small">' + esc(ts) + '</td>' +
       '<td>' + esc(src) + '</td>' +
       '<td class="mono small">' + esc(m) + '</td>' +
       '<td class="mono small">' + inp.toLocaleString() + ' / ' + out.toLocaleString() + '</td>' +
@@ -2045,7 +2995,7 @@ if ($('btnMetricsExport')) {
       URL.revokeObjectURL(url);
       toast('Статистику експортовано в JSON ✓');
     } catch (e) {
-      toast('Помилка експорту: ' + e.message, true);
+      toast(t('Помилка експорту: {e}', { e: e.message }), true);
     }
   });
 }
@@ -2061,9 +3011,11 @@ function renderUserBox(user) {
   const box = $('userBox');
   if (!user) { box.style.display = 'none'; return; }
   const uEl = $('userName');
+  const label = String(user.username || user.name || '?').replace(/^@/, '');
+  if ($('userInitials')) $('userInitials').textContent = label.slice(0, 2).toUpperCase();
   if (user.username) {
     const u = user.username.replace(/^@/, '');
-    uEl.innerHTML = '<a href="https://t.me/' + esc(u) + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent-2);text-decoration:none;font-weight:600">@' + esc(u) + '</a>';
+    uEl.innerHTML = '<a href="https://t.me/' + esc(u) + '" target="_blank" rel="noopener noreferrer" style="color:var(--text);text-decoration:none;font-weight:600">@' + esc(u) + '</a>';
   } else {
     uEl.textContent = user.name || 'Учасник';
   }
@@ -2086,8 +3038,8 @@ function renderGate(state) {
       + '<button class="gate-btn" id="gLogin">' + SVG_TG + '<span>Увійти через Telegram</span></button>'
       + '<div class="gate-note">Відкриється офіційне вікно Telegram. Ми не бачимо твій пароль чи номер — лише підтвердження від Telegram.</div>';
   } else if (s === 'denied') {
-    html = '<h1>Доступ обмежено 🔒</h1><p>Твій акаунт Telegram не є учасником закритої групи <b>Secret YT_cartel 🧠</b>. CarteLink доступний лише учасникам групи.</p>'
-      + '<a class="gate-btn gold" href="https://t.me/tribute/app?startapp=eUb" target="_blank" rel="noopener" style="text-decoration:none">🚀 <span>Отримати доступ</span></a>'
+    html = '<h1>Доступ обмежено</h1><p>Твій акаунт Telegram не є учасником закритої групи <b>Secret YT_cartel 🧠</b>. CarteLink доступний лише учасникам групи.</p>'
+      + '<a class="gate-btn gold" href="https://t.me/tribute/app?startapp=eUb" target="_blank" rel="noopener" style="text-decoration:none"><span>Отримати доступ</span></a>'
       + '<button class="gate-btn alt" id="gRecheck">Я вже вступив — перевірити</button>'
       + '<button class="gate-btn alt" id="gLogin">↺ Увійти іншим акаунтом Telegram</button>'
       + '<div class="gate-note">Щойно вступив? Зачекай кілька секунд і натисни «перевірити».</div>';
@@ -2097,7 +3049,7 @@ function renderGate(state) {
   } else {
     html = '<h1>Помилка перевірки доступу</h1><p>Не вдалося зв\'язатися з застосунком.</p>'
       + '<button class="gate-btn" id="gRecheck">Спробувати ще раз</button>'
-      + (state && state.reason ? '<div class="gate-note" style="color:var(--red)">Причина: ' + esc(state.reason) + '</div>' : '');
+      + (state && state.reason ? '<div class="gate-note" style="color:var(--red)">' + esc(t('Причина: {e}', { e: state.reason })) + '</div>' : '');
   }
   $('gateBody').innerHTML = html;
   const bind = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
@@ -2109,12 +3061,12 @@ function renderGate(state) {
 function paintAuthSettings(st) {
   if (!st) return;
   const map = {
-    authorized: ['✅ Доступ відкрито', 'var(--green)'],
-    checking: ['⏳ Перевіряємо…', 'var(--amber)'],
-    awaiting: ['⏳ Очікуємо вхід у браузері', 'var(--amber)'],
-    denied: ['🔒 Не учасник групи', 'var(--red)'],
-    offline: ['⚠ Немає зв\'язку з сервером перевірки', 'var(--amber)'],
-    need_login: ['🔒 Потрібен вхід', 'var(--amber)'],
+    authorized: ['Доступ відкрито', 'var(--green)'],
+    checking: ['Перевіряємо…', 'var(--amber)'],
+    awaiting: ['Очікуємо вхід у браузері', 'var(--amber)'],
+    denied: ['Не учасник групи', 'var(--red)'],
+    offline: ['Немає зв\'язку з сервером перевірки', 'var(--amber)'],
+    need_login: ['Потрібен вхід', 'var(--amber)'],
   };
   const [text, color] = map[st.status] || ['—', 'var(--muted)'];
   $('set-auth-status').textContent = text;
@@ -2151,10 +3103,21 @@ function startAuthPoll() {
   }, 1500);
 }
 
+const LAUNCH_T0 = performance.now();
+function revealApp() {
+  const wait = Math.max(0, 780 - (performance.now() - LAUNCH_T0));
+  setTimeout(() => {
+    document.body.classList.add('authed');
+    requestAnimationFrame(() => document.body.classList.add('ready'));
+  }, wait);
+}
+
 function applyAuth(state) {
   currentAuthState = state;
   const isAuthed = state.enabled === false || state.status === 'authorized';
-  document.body.classList.toggle('authed', !!isAuthed);
+  if (!isAuthed) document.body.classList.remove('authed');
+  else if (wasAuthed) document.body.classList.add('authed');
+  else revealApp();
   paintAuthSettings(state);
   if (isAuthed) {
     stopAuthPoll();
@@ -2188,7 +3151,7 @@ async function startTelegramLogin() {
     stopAuthPoll();
     startAuthPoll();
   } catch (e) {
-    toast('Не вдалось почати вхід: ' + e.message, true);
+    toast(t('Не вдалось почати вхід: {e}', { e: e.message }), true);
     renderGate({ status: 'need_login' });
   }
 }
@@ -2213,7 +3176,7 @@ async function logoutTelegram() {
     wasAuthed = false;
     await checkAuthGate();
   } catch (e) {
-    toast('Не вдалось вийти: ' + e.message, true);
+    toast(t('Не вдалось вийти: {e}', { e: e.message }), true);
   }
 }
 
@@ -2246,4 +3209,18 @@ function boot() {
   try { start = localStorage.getItem(PAGE_KEY) || 'home'; } catch (e) { /* ignore */ }
   showPage(start);
 }
+
+// Language pickers (sidebar + Settings). A language chosen earlier in the
+// app (config.json) wins when this window has none remembered yet.
+fillLangSelect($('sidebar-lang'));
+fillLangSelect($('set-lang'));
+(async () => {
+  let saved = null;
+  try { saved = localStorage.getItem(I18N_KEY); } catch (e) { /* ignore */ }
+  if (saved) return;
+  try {
+    const a = await api('/app/settings');
+    if (a.lang && a.lang !== LANG && I18N_LANGS.some((l) => l.code === a.lang)) setLang(a.lang);
+  } catch (e) { /* keep default */ }
+})();
 checkAuthGate();

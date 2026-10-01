@@ -68,6 +68,8 @@ const (
 	mfSeparator    = 0x800
 	menuOpen       = 1
 	menuQuit       = 2
+	menuSwitcher   = 3
+	mfChecked      = 0x8
 )
 
 type notifyIconData struct {
@@ -136,6 +138,9 @@ func RunMainWindow(o Options) error {
 	if o.StartHidden && trayOn {
 		_, _, _ = procShowWindow.Call(hwnd, swHide)
 	}
+	if o.ShowSwitcher != nil && o.ShowSwitcher() {
+		w.Dispatch(openSwitcher)
+	}
 	w.Run()
 	removeTrayIcon(hwnd)
 	mu.Lock()
@@ -193,7 +198,7 @@ func subclassProc(hwnd, msg, wp, lp uintptr) uintptr {
 		if !quitting.Load() && trayOn && opts.CloseToTray != nil && opts.CloseToTray() {
 			_, _, _ = procShowWindow.Call(hwnd, swHide)
 			if hintShown.CompareAndSwap(false, true) {
-				balloon(hwnd, "CarteLink працює у фоні", "Шлюз далі працює. Відкрити вікно — клік по значку в треї; вийти — правий клік → «Вийти».")
+				balloon(hwnd, trayText("bgTitle"), trayText("bgText"))
 			}
 			return 0
 		}
@@ -221,9 +226,17 @@ func trayMenu(hwnd uintptr) {
 		return
 	}
 	defer procDestroyMenu.Call(menu)
-	open, _ := syscall.UTF16PtrFromString("Відкрити CarteLink")
-	quit, _ := syscall.UTF16PtrFromString("Вийти")
+	open, _ := syscall.UTF16PtrFromString(trayText("open"))
+	quit, _ := syscall.UTF16PtrFromString(trayText("quit"))
+	sw, _ := syscall.UTF16PtrFromString(trayText("switcher"))
 	_, _, _ = procAppendMenuW.Call(menu, mfString, menuOpen, uintptr(unsafe.Pointer(open)))
+	if opts.ToggleSwitcher != nil {
+		flags := uintptr(mfString)
+		if opts.ShowSwitcher != nil && opts.ShowSwitcher() {
+			flags |= mfChecked
+		}
+		_, _, _ = procAppendMenuW.Call(menu, flags, menuSwitcher, uintptr(unsafe.Pointer(sw)))
+	}
 	_, _, _ = procAppendMenuW.Call(menu, mfSeparator, 0, 0)
 	_, _, _ = procAppendMenuW.Call(menu, mfString, menuQuit, uintptr(unsafe.Pointer(quit)))
 	var pt point
@@ -234,6 +247,8 @@ func trayMenu(hwnd uintptr) {
 	switch cmd {
 	case menuOpen:
 		showWindow(hwnd)
+	case menuSwitcher:
+		go opts.ToggleSwitcher()
 	case menuQuit:
 		quitting.Store(true)
 		_, _, _ = procPostMessageW.Call(hwnd, wmClose, 0, 0)
@@ -253,7 +268,7 @@ func addTrayIcon(hwnd uintptr) bool {
 	nid.UFlags = nifMessage | nifIcon | nifTip
 	nid.UCallbackMessage = wmTray
 	nid.HIcon = icon
-	copyUTF16(nid.SzTip[:], "CarteLink — AI-шлюз працює")
+	copyUTF16(nid.SzTip[:], trayText("tip"))
 	r, _, _ := procShellNotifyIconW.Call(nimAdd, uintptr(unsafe.Pointer(nid)))
 	return r != 0
 }
@@ -288,4 +303,12 @@ func Alert(title, text string) {
 	t, _ := syscall.UTF16PtrFromString(title)
 	m, _ := syscall.UTF16PtrFromString(text)
 	_, _, _ = procMessageBoxW.Call(0, uintptr(unsafe.Pointer(m)), uintptr(unsafe.Pointer(t)), 0)
+}
+
+func trayText(key string) string {
+	lang := ""
+	if opts.Lang != nil {
+		lang = opts.Lang()
+	}
+	return trayTextFor(lang, key)
 }

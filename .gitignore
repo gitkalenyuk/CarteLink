@@ -20,3 +20,4 @@ generate_*.py
 tools/
 *.png
 !build/*.png
+.impeccable/questions/

@@ -1,32 +1,35 @@
 // CarteLink — каталог програм для сторінки «Підключити програму».
 // Плейсхолдери: {{BASE}} = http://127.0.0.1:8317, {{BASE_V1}} = http://127.0.0.1:8317/v1,
-// {{KEY}} = API-ключ, {{MODEL}} = обрана модель, {{MODEL_FAST}} = швидка модель.
+// {{KEY}} = API-ключ, {{MODEL}} = обрана модель, {{MODEL_FAST}} = швидка модель,
+// {{CTX}} = контекстне вікно моделі {{MODEL}}, {{CTX_COMPACT}} = 90% від нього
+// (рядки з {{CTX…}} пропускаються, поки вікно невідоме).
 // uncertain: true — кастомний ендпоінт не підтримується офіційно або не перевірено.
 const CLIENTS = [
   // ───────────── CLI ─────────────
   {
     id: 'claude-code', name: 'Claude Code', kind: 'cli', api: 'anthropic',
     docs: 'https://docs.anthropic.com/en/docs/claude-code/settings#environment-variables',
-    note: 'Моделі не міняй: Haiku/Sonnet/Opus автоматично йдуть у тири CarteLink.',
+    note: 'Haiku/Sonnet/Opus автоматично йдуть у рівні CarteLink. У меню /model з’явиться пункт «CarteLink: <основна модель>» (Claude Code 2.1.242+, перезапусти Claude Code після зміни моделі). Якщо модель має контекст 1M+, пункт позначено «· 1M» — обери саме його, тоді Claude Code рахує 1M замість 200K.',
     env: [
       ['ANTHROPIC_BASE_URL', '{{BASE}}'],
       ['ANTHROPIC_AUTH_TOKEN', '{{KEY}}'],
+      ['CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY', '1'],
     ],
     file: {
       path: '~/.claude/settings.json', lang: 'json',
-      content: '{\n  "env": {\n    "ANTHROPIC_BASE_URL": "{{BASE}}",\n    "ANTHROPIC_AUTH_TOKEN": "{{KEY}}"\n  }\n}\n',
+      content: '{\n  "env": {\n    "ANTHROPIC_BASE_URL": "{{BASE}}",\n    "ANTHROPIC_AUTH_TOKEN": "{{KEY}}",\n    "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1"\n  }\n}\n',
     },
   },
   {
     id: 'codex-cli', name: 'Codex CLI (OpenAI)', kind: 'cli', api: 'openai',
     docs: 'https://developers.openai.com/codex/config-advanced',
-    note: 'Працює через /v1/responses. Провайдер задається лише в ~/.codex/config.toml.',
+    note: 'Працює через /v1/responses. Провайдер задається лише в ~/.codex/config.toml. model_context_window — справжнє вікно обраної моделі (без нього Codex показує свої 258K); якщо зміниш модель на іншу, онови це число.',
     env: [
       ['CARTELINK_API_KEY', '{{KEY}}'],
     ],
     file: {
       path: '~/.codex/config.toml', lang: 'toml',
-      content: 'model = "{{MODEL}}"\nmodel_provider = "cartelink"\n\n[model_providers.cartelink]\nname = "CarteLink"\nbase_url = "{{BASE_V1}}"\nenv_key = "CARTELINK_API_KEY"\nwire_api = "responses"\n',
+      content: 'model = "{{MODEL}}"\nmodel_provider = "cartelink"\nmodel_context_window = {{CTX}}\nmodel_auto_compact_token_limit = {{CTX_COMPACT}}\n\n[model_providers.cartelink]\nname = "CarteLink"\nbase_url = "{{BASE_V1}}"\nenv_key = "CARTELINK_API_KEY"\nwire_api = "responses"\n',
     },
   },
   {

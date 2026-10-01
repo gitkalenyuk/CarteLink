@@ -137,3 +137,51 @@ func TestReadAPIKeys(t *testing.T) {
 		t.Errorf("missing file must yield nil")
 	}
 }
+
+func TestSyncConfigYAML_PluginsEnabledConfigsKept(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	seed := "plugins:\n  enabled: false\n  dir: plugins\n  configs:\n    kiro:\n      enabled: true\n      idc_region: us-east-1\n"
+	if err := os.WriteFile(path, []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := Managed{Host: "127.0.0.1", Port: 8317, Secret: "s", AuthDir: "a", PluginsDir: `C:\home\data\cliproxy\plugins`}
+	if err := SyncConfigYAML(path, m); err != nil {
+		t.Fatal(err)
+	}
+	pl := readDoc(t, path)["plugins"].(map[string]any)
+	if pl["enabled"] != true || pl["dir"] != `C:\home\data\cliproxy\plugins` {
+		t.Fatalf("plugins not enabled/dir: %v", pl)
+	}
+	kiro := pl["configs"].(map[string]any)["kiro"].(map[string]any)
+	if kiro["idc_region"] != "us-east-1" {
+		t.Fatalf("plugin configs lost: %v", pl)
+	}
+}
+
+func TestSyncConfigYAML_RestoresFromBackupWhenTruncated(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	good := "openai-compatibility:\n  - name: routeway\n    base-url: https://example.com/v1\nport: 8317\n"
+	if err := os.WriteFile(path, []byte(good), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := Managed{Host: "127.0.0.1", Port: 8317, Secret: "s", AuthDir: "a"}
+	if err := SyncConfigYAML(path, m); err != nil { // creates config.yaml.bak
+		t.Fatal(err)
+	}
+	// The engine was killed mid-write: empty file, then a half-written one.
+	for _, bad := range []string{"", "openai-compatibility:\n  - name: \"rout"} {
+		if err := os.WriteFile(path, []byte(bad), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := SyncConfigYAML(path, m); err != nil {
+			t.Fatal(err)
+		}
+		oc, _ := readDoc(t, path)["openai-compatibility"].([]any)
+		if len(oc) != 1 {
+			t.Fatalf("provider lost after %q: %v", bad, readDoc(t, path))
+		}
+	}
+	if matches, _ := filepath.Glob(path + ".broken-*"); len(matches) != 1 {
+		t.Fatalf("broken file not kept aside: %v", matches)
+	}
+}

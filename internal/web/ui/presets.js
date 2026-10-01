@@ -10,7 +10,7 @@ window.PROVIDER_PRESETS = [
   { id: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1', keyUrl: 'https://platform.openai.com/api-keys', group: 'cloud',
     models: ['gpt-5.5', 'gpt-5.5-mini', 'gpt-5', 'gpt-4.1', 'gpt-4o', 'gpt-4o-mini', 'o3', 'o4-mini'], hint: 'Платний API. Ключ sk-…' },
   { id: 'anthropic', label: 'Anthropic (OpenAI SDK compat)', url: 'https://api.anthropic.com/v1', keyUrl: 'https://console.anthropic.com/settings/keys', group: 'cloud',
-    models: ['claude-fable-5-1', 'claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-opus-4-6', 'claude-sonnet-4-6'], hint: 'Anthropic має OpenAI-сумісний шар /v1/chat/completions. Для рідного формату краще додати ключ у «Рідні API ключі → Claude».' },
+    models: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1', 'claude-haiku-4-5', 'claude-opus-5', 'claude-sonnet-5', 'claude-opus-4-6', 'claude-sonnet-4-6'], hint: 'Anthropic має OpenAI-сумісний шар /v1/chat/completions. Для рідного формату краще додати ключ у «Рідні API ключі → Claude».' },
   { id: 'gemini', label: 'Google Gemini (OpenAI compat)', url: 'https://generativelanguage.googleapis.com/v1beta/openai', keyUrl: 'https://aistudio.google.com/apikey', group: 'cloud',
     models: ['gemini-3.8-pro', 'gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-pro', 'gemini-2.5-flash'], hint: 'Безкоштовний tier у AI Studio. Для рідного формату — «Рідні API ключі → Gemini».' },
   { id: 'xai', label: 'xAI (Grok)', url: 'https://api.x.ai/v1', keyUrl: 'https://console.x.ai', group: 'cloud',
