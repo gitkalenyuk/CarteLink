@@ -17,6 +17,11 @@ VERSION=$(sed -n 's/^const Version = "\(.*\)"/\1/p' internal/config/config.go)
 APP=dist/CarteLink.app
 DMG=dist/CarteLink-${VERSION}.dmg
 ARCHS=${ARCH:-"arm64 amd64"}
+# Go 1.27 itself targets macOS 13 (its linker stamps go.o with 13.0). The cgo
+# objects need the same target in CGO_CFLAGS/CGO_LDFLAGS: unlike
+# MACOSX_DEPLOYMENT_TARGET these are part of Go's build-cache key, so objects
+# cached from a plain `go build` (built for the host macOS) are not reused.
+MINOS=13.0
 
 echo "== CarteLink ${VERSION}: tests"
 go vet . ./internal/...
@@ -27,7 +32,8 @@ rm -rf dist && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 echo "== build (${ARCHS})"
 BINS=()
 for a in $ARCHS; do
-  CGO_ENABLED=1 GOOS=darwin GOARCH=$a MACOSX_DEPLOYMENT_TARGET=12.0 \
+  CGO_ENABLED=1 GOOS=darwin GOARCH=$a MACOSX_DEPLOYMENT_TARGET=$MINOS \
+    CGO_CFLAGS="-O2 -g -mmacosx-version-min=$MINOS" CGO_LDFLAGS="-mmacosx-version-min=$MINOS" \
     go build -trimpath -ldflags "-s -w" -o "dist/cartelink-$a" .
   BINS+=("dist/cartelink-$a")
 done
@@ -64,7 +70,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>cartelink</string>
   <key>CFBundleIconFile</key><string>CarteLink</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>LSMinimumSystemVersion</key><string>12.0</string>
+  <key>LSMinimumSystemVersion</key><string>${MINOS}</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSAppTransportSecurity</key>
   <dict><key>NSAllowsLocalNetworking</key><true/></dict>
