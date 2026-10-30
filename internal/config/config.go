@@ -16,7 +16,7 @@ import (
 )
 
 // Version is the app version reported in /health and the UI.
-const Version = "2.5.2"
+const Version = "2.5.3"
 
 // AppName is the product name used in window titles, logs and messages.
 const AppName = "CarteLink"

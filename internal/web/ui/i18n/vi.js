@@ -24,7 +24,7 @@ window.I18N_DICT = {
   "0 — використовувати рівень вище. CarteLink обрізає значення до меж конкретної моделі й до max_tokens запиту.": "0 — dùng mức ở trên. CarteLink cắt giá trị theo giới hạn của từng mô hình và theo max_tokens của yêu cầu.",
   "0 — за рівнем": "0 — theo mức",
   "Змінюй, лише якщо 8317 зайнятий іншою програмою. Після зміни онови адресу в своїх програмах.": "Chỉ đổi nếu port 8317 đang bị ứng dụng khác dùng. Sau khi đổi, hãy cập nhật địa chỉ trong các ứng dụng của bạn.",
-  "127.0.0.1 — доступ лише з цього комп'ютера (рекомендовано). 0.0.0.0 — з локальної мережі.": "127.0.0.1 — chỉ truy cập từ máy này (khuyên dùng). 0.0.0.0 — từ mạng nội bộ.",
+  "127.0.0.1 — доступ лише з цього комп'ютера (рекомендовано). 0.0.0.0 — API моделей доступний і з локальної мережі за ключем; панель лише на цьому комп'ютері.": "127.0.0.1 — chỉ truy cập từ máy này (khuyên dùng). 0.0.0.0 — API mô hình cũng dùng được từ mạng nội bộ bằng khóa; bảng điều khiển chỉ trên máy này.",
   "Якщо вимкнено — шлюз приймає будь-який ключ. Залиш увімкненим, якщо Host не 127.0.0.1.": "Nếu tắt — cổng chấp nhận mọi khóa. Hãy để bật nếu Host không phải 127.0.0.1.",
   "Пошук моделі…": "Tìm mô hình…",
   "наприклад: gpt-3.5-turbo": "ví dụ: gpt-3.5-turbo",

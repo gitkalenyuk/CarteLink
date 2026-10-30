@@ -33,7 +33,7 @@ if (!I18N_LANGS.some((l) => l.code === LANG)) LANG = 'uk';
 window.I18N_DICT = null;
 if (LANG !== 'uk') {
   // Synchronous on purpose: the dictionary must be there before app.js runs.
-  document.write('<script src="i18n/' + LANG + '.js?v=2.5.2"><\/script>');
+  document.write('<script src="i18n/' + LANG + '.js?v=2.5.3"><\/script>');
 }
 
 const I18N_ATTRS = ['title', 'placeholder', 'data-tip', 'label', 'aria-label'];

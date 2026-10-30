@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CarteLink</title>
-<link rel="stylesheet" href="style.css?v=2.5.2">
-<script src="i18n.js?v=2.5.2"></script>
+<link rel="stylesheet" href="style.css?v=2.5.3">
+<script src="i18n.js?v=2.5.3"></script>
 </head>
 <body>
 <!--
@@ -700,7 +700,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
         <div class="card-title"><svg class="i"><use href="#i-plug"/></svg>Шлюз</div>
         <div class="grid two">
           <label>Порт <span class="help-tip" data-tip="Змінюй, лише якщо 8317 зайнятий іншою програмою. Після зміни онови адресу в своїх програмах.">?</span><input id="set-port" type="number" min="1" max="65535"></label>
-          <label>Host <span class="help-tip" data-tip="127.0.0.1 — доступ лише з цього комп'ютера (рекомендовано). 0.0.0.0 — з локальної мережі.">?</span><input id="set-host"></label>
+          <label>Host <span class="help-tip" data-tip="127.0.0.1 — доступ лише з цього комп'ютера (рекомендовано). 0.0.0.0 — API моделей доступний і з локальної мережі за ключем; панель лише на цьому комп'ютері.">?</span><input id="set-host"></label>
         </div>
         <div class="set-row">
           <label class="switch"><input type="checkbox" id="set-require" /><span class="slider"></span><span class="switch-label">Вимагати API ключ від програм <span class="help-tip" data-tip="Якщо вимкнено — шлюз приймає будь-який ключ. Залиш увімкненим, якщо Host не 127.0.0.1.">?</span></span></label>
@@ -869,8 +869,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 </dialog>
 
 <div id="toast" class="toast hidden"></div>
-<script src="presets.js?v=2.5.2"></script>
-<script src="clients.js?v=2.5.2"></script>
-<script src="app.js?v=2.5.2"></script>
+<script src="presets.js?v=2.5.3"></script>
+<script src="clients.js?v=2.5.3"></script>
+<script src="app.js?v=2.5.3"></script>
 </body>
 </html>

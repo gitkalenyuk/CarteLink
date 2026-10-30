@@ -50,7 +50,7 @@ func (a *App) mgmtRequestType(method, path string, body []byte, ctype string) (i
 		return http.StatusServiceUnavailable, errJSON, "application/json"
 	}
 	cfg := a.snapshotConfig()
-	full := fmt.Sprintf("http://%s%s", net.JoinHostPort(config.DisplayHost(cfg.Cliproxy.Host), strconv.Itoa(a.EffectivePort())), path)
+	full := engineBaseURL(cfg.Cliproxy.Host, a.EffectivePort()) + path
 	var rdr io.Reader
 	if body != nil {
 		rdr = bytes.NewReader(body)

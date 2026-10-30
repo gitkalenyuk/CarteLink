@@ -24,7 +24,7 @@ window.I18N_DICT = {
   "0 — використовувати рівень вище. CarteLink обрізає значення до меж конкретної моделі й до max_tokens запиту.": "0 — utiliser le niveau ci-dessus. CarteLink ramène la valeur dans les limites du modèle concerné et du max_tokens de la requête.",
   "0 — за рівнем": "0 — selon le niveau",
   "Змінюй, лише якщо 8317 зайнятий іншою програмою. Після зміни онови адресу в своїх програмах.": "Ne modifiez que si 8317 est occupé par une autre application. Ensuite, mettez à jour l'adresse dans vos applications.",
-  "127.0.0.1 — доступ лише з цього комп'ютера (рекомендовано). 0.0.0.0 — з локальної мережі.": "127.0.0.1 — accès depuis cet ordinateur uniquement (recommandé). 0.0.0.0 — depuis le réseau local.",
+  "127.0.0.1 — доступ лише з цього комп'ютера (рекомендовано). 0.0.0.0 — API моделей доступний і з локальної мережі за ключем; панель лише на цьому комп'ютері.": "127.0.0.1 — accès depuis cet ordinateur uniquement (recommandé). 0.0.0.0 — l'API des modèles est aussi accessible depuis le réseau local avec une clé ; le panneau reste limité à cet ordinateur.",
   "Якщо вимкнено — шлюз приймає будь-який ключ. Залиш увімкненим, якщо Host не 127.0.0.1.": "Si désactivé, la passerelle accepte n'importe quelle clé. Laissez activé si Host n'est pas 127.0.0.1.",
   "Пошук моделі…": "Rechercher un modèle…",
   "наприклад: gpt-3.5-turbo": "par exemple : gpt-3.5-turbo",

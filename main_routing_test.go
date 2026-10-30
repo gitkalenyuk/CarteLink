@@ -172,6 +172,52 @@ func TestSameOriginRequest(t *testing.T) {
 	}
 }
 
+func TestSameOriginRequestDNSRebinding(t *testing.T) {
+	mk := func(host string, hdr map[string]string) *http.Request {
+		r, _ := http.NewRequest(http.MethodGet, "http://"+host+"/api/config", nil)
+		r.Host = host
+		for k, v := range hdr {
+			r.Header.Set(k, v)
+		}
+		return r
+	}
+	sameOrigin := map[string]string{"Sec-Fetch-Site": "same-origin"}
+	rejected := []*http.Request{
+		mk("evil.example:8317", sameOrigin), // a rebound page reading /api/config
+		mk("evil.example:8317", nil),
+		mk("evil.example", nil),
+		mk("evil.example:8317", map[string]string{"Sec-Fetch-Site": "none"}),
+		mk("evil.localhost:8317", sameOrigin),
+		mk("localhost.evil.example:8317", sameOrigin),
+		mk("127.0.0.1.evil.example:8317", sameOrigin),
+		mk("", nil),
+	}
+	for _, r := range rejected {
+		if sameOriginRequest(r, "127.0.0.1", "0.0.0.0") {
+			t.Errorf("Host %q (%v): allowed", r.Host, r.Header)
+		}
+	}
+	allowed := []*http.Request{
+		mk("127.0.0.1:8317", sameOrigin),
+		mk("LOCALHOST:8317", sameOrigin),
+		mk("[::1]:8317", sameOrigin),
+		mk("192.168.1.50:8317", sameOrigin),
+		mk("127.0.0.1:8317", nil), // second launch, catalog refresh
+	}
+	for _, r := range allowed {
+		if !sameOriginRequest(r, "127.0.0.1") {
+			t.Errorf("Host %q: refused", r.Host)
+		}
+	}
+	// Host set to a machine name in Settings: the window opens on that name.
+	if !sameOriginRequest(mk("mypc.local:8317", sameOrigin), "mypc.local") {
+		t.Error("configured host name refused")
+	}
+	if sameOriginRequest(mk("mypc.local:8317", sameOrigin), "other.local", "  ") {
+		t.Error("a name that is not configured allowed")
+	}
+}
+
 func TestClaudePickerEntries(t *testing.T) {
 	cfg := config.Defaults()
 	if got := claudePickerEntries(cfg, nil); len(got) != 0 {

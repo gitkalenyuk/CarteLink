@@ -1,0 +1,48 @@
+# macOS release build: CarteLink.app + CarteLink-<version>.dmg as a run artifact.
+# Started by hand (macOS minutes are expensive): gh workflow run mac-build.yml
+name: Mac build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build app and dmg (vet and tests included)
+        run: bash scripts/build-mac-app.sh
+
+      - name: Smoke test the built binary
+        env:
+          CARTELINK_HOME: ${{ runner.temp }}/cartelink-home
+        run: |
+          lipo -info dist/CarteLink.app/Contents/MacOS/cartelink
+          codesign --verify --deep dist/CarteLink.app
+          version=$(sed -n 's/^const Version = "\(.*\)"/\1/p' internal/config/config.go)
+          dist/CarteLink.app/Contents/MacOS/cartelink --headless --port 8317 &
+          pid=$!
+          for i in $(seq 1 60); do
+            curl -sf -m 2 http://127.0.0.1:8317/healthz >/dev/null && break
+            sleep 1
+          done
+          curl -s -m 5 http://127.0.0.1:8317/api/status | grep -q "\"version\":\"$version\""
+          # A release build keeps the Telegram gate: no model traffic before login.
+          test "$(curl -s -o /dev/null -w '%{http_code}' -m 5 http://127.0.0.1:8317/v1/models)" = "403"
+          kill "$pid"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CarteLink-mac
+          path: dist/CarteLink-*.dmg
+          if-no-files-found: error
+          retention-days: 14

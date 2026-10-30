@@ -11,6 +11,7 @@ import (
 	"errors"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os/exec"
 	"path/filepath"
@@ -65,6 +66,7 @@ type App struct {
 	// sessionPort overrides the configured port for this run only.
 	sessionPort int
 	showFn      func()
+	restartFn   func()
 	// switcherFn shows (true) or hides (false) the floating model switcher
 	// window; nil where there is no desktop window.
 	switcherFn  func(show bool)
@@ -158,8 +160,21 @@ func (a *App) EngineRestart() error {
 			return
 		}
 		a.setLastError("")
+		a.mu.Lock()
+		f := a.restartFn
+		a.mu.Unlock()
+		if f != nil {
+			f()
+		}
 	}()
 	return nil
+}
+
+// SetRestartHandler sets what runs after a successful EngineRestart.
+func (a *App) SetRestartHandler(f func()) {
+	a.mu.Lock()
+	a.restartFn = f
+	a.mu.Unlock()
 }
 
 // Restarting reports whether a restart is in flight.
@@ -398,12 +413,18 @@ func (a *App) StartModelCatalog() {
 	}()
 }
 
+// engineBaseURL is where this process reaches its own engine: on the bind host,
+// because with one LAN address the engine does not listen on loopback.
+func engineBaseURL(host string, port int) string {
+	return "http://" + net.JoinHostPort(strings.Trim(config.DisplayHost(host), "[]"), itoa(port))
+}
+
 func (a *App) refreshModelCatalog() {
 	if !a.EngineRunning() || !a.IsAuthenticated() {
 		return
 	}
 	cfg := a.snapshotConfig()
-	req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1:"+itoa(a.EffectivePort())+"/v1/models", nil)
+	req, err := http.NewRequest(http.MethodGet, engineBaseURL(cfg.Cliproxy.Host, a.EffectivePort())+"/v1/models", nil)
 	if err != nil {
 		return
 	}

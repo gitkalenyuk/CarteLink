@@ -1,6 +1,6 @@
 # CarteLink — instructions for Claude Code
 
-Локальний AI-шлюз (Go) від YouTube Cartel, версія **2.5.2**. Вихідний код CLIProxyAPI
+Локальний AI-шлюз (Go) від YouTube Cartel, версія **2.5.3**. Вихідний код CLIProxyAPI
 вкомпільовано в бінарник (`third_party/CLIProxyAPI`, `go.mod replace`). UI — вбудовані
 статичні файли в `internal/web/ui`. Користувач пише українською — відповідай українською.
 Історія назв: VisionGateGo → CartelGate (2.0) → **CarteLink** (2.1+). Змін див. `CHANGELOG.md`.
@@ -12,6 +12,7 @@
 | `main.go` | Старт: одна копія, конфіг, лог, порт на сесію, root-middleware (гейт, пауза, мапінг, `/v1/models`), вікно/консоль |
 | `routing.go` | Мапінг моделей: рівні / таблиця / «розумний» fallback. **Лише точні збіги та явні префікси** |
 | `scoped.go` | Обмеження API-ключів із власними моделями (перевірка в root-middleware) |
+| `localaccess.go` | Іншим пристроям — лише API моделей (`networkAllowedPath`, білий список); панель, `/api/*`, Management API — лише з цього комп'ютера |
 | `internal/config/` | `config.json`: схема, міграції (schema 2), `Normalize`, атомарний `Save`, `TierAliases` |
 | `internal/cliproxy/` | Вбудований рушій + `SyncConfigYAML` (керовані ключі `config.yaml`) |
 | `internal/web/server.go` | `App`: стан, порт сесії (`EffectivePort`), кеш моделей (`IsKnownModel`) |
@@ -103,6 +104,7 @@ PowerShell/CMD/bash + файли) · Акаунти (OAuth) · Моделі (р�
 ## Поведінка «налаштував і забув»
 - Порт фіксований **8317**. Зайнятий → інший порт лише на цей запуск (не зберігається);
   `--port N` теж лише на запуск. Змінити назавжди — Налаштування → Шлюз.
+- Host може бути конкретною адресою: тоді рушій не слухає loopback. До свого рушія ходити лише через `engineBaseURL` (`internal/web/server.go`), не через жорсткий `127.0.0.1`.
 - Одна копія: повторний запуск показує вікно першої й виходить.
 - Windows: закриття вікна → трей (вимикається в Налаштуваннях); вийти — трей → «Вийти».
 - Автозапуск: Windows `HKCU\…\Run` (`--minimized`), macOS LaunchAgent, Linux XDG.
@@ -121,6 +123,8 @@ Electron-мотлоху).
 
 ## Що робити на macOS
 
+Без Mac: `gh workflow run mac-build.yml` збирає `.dmg` на GitHub Actions (артефакт `CarteLink-mac`).
+
 Виконай кроки по порядку, не питаючи підтвердження на кожен крок:
 
 1. **Залежності.** `git`, Go ≥ 1.27, `node` (перевірка JS), **Xcode Command Line Tools**
@@ -133,7 +137,7 @@ Electron-мотлоху).
    `gui_darwin.go` (cgo) на Windows не компілюється — перша реальна перевірка саме тут;
    якщо збірка падає, виправляй `internal/desktop/gui_darwin.go`.
 5. **Перевір наживо:** `open dist/CarteLink.app`, потім
-   `curl -s http://127.0.0.1:8317/api/status` → `"version":"2.5.2"`. Перевір Cmd+C/Cmd+V у вікні.
+   `curl -s http://127.0.0.1:8317/api/status` → `"version":"2.5.3"`. Перевір Cmd+C/Cmd+V у вікні.
 
 ## Правила проєкту
 

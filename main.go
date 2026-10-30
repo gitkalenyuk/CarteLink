@@ -54,9 +54,9 @@ func main() {
 	// Single instance: a second launch brings the running copy's window up
 	// instead of starting another gateway on another port.
 	if !*headless && *portOverride == 0 {
-		if pid, port, ok := instance.Existing(); ok {
+		if pid, addr, ok := instance.Existing(); ok {
 			desktop.AllowForeground(pid)
-			if instance.Show(port) {
+			if instance.Show(addr) {
 				return
 			}
 		}
@@ -146,6 +146,7 @@ func main() {
 	}
 
 	// Root middleware runs ahead of every engine route. Jobs:
+	//   0. other devices get the model API only (see localaccess.go);
 	//   1. send "/" to the GUI (upstream registers its own JSON root, so this
 	//      has to intercept before routing, not add a route);
 	//   2. auth gate: model traffic needs a verified Telegram membership;
@@ -158,6 +159,9 @@ func main() {
 	//      endpoints (read per request, so saving it in the UI applies
 	//      immediately) and serve an honest /v1/models.
 	root := func(c *gin.Context) {
+		if !localOnlyGate(c) {
+			return
+		}
 		if c.Request.URL.Path == "/" {
 			c.Redirect(302, "/ui/")
 			c.Abort()
@@ -168,8 +172,15 @@ func main() {
 		// every route with "Access-Control-Allow-Origin: *". Without this
 		// gate any web page open in the user's browser could read the
 		// config (API key) or drive the Management API passthrough.
-		if strings.HasPrefix(p, "/api/") && !sameOriginRequest(c.Request) {
+		// host: the name the window opened on, until a restart applies a new one.
+		boundHosts := []string{host, app.CurrentConfig().Cliproxy.Host}
+		if strings.HasPrefix(p, "/api/") && !sameOriginRequest(c.Request, boundHosts...) {
 			c.AbortWithStatusJSON(403, gin.H{"ok": false, "error": "cross-origin access to the control API is not allowed"})
+			return
+		}
+		// Plugin consoles have no auth of their own either.
+		if strings.HasPrefix(p, "/v0/resource/plugins/") && !trustedHostHeader(c.Request.Host, boundHosts) {
+			c.AbortWithStatusJSON(403, gin.H{"ok": false, "error": "this host name is not allowed"})
 			return
 		}
 		// Panel surface: the GUI, its control API, the engine's own
@@ -285,8 +296,10 @@ func main() {
 	if err := waitReady(base, 15*time.Second); err != nil {
 		fail(useGUI, "server did not become ready", err)
 	}
-	instance.Register(port)
+	instance.Register(host, port)
 	defer instance.Unregister()
+	// A restart from the UI applies a saved host/port: a second launch must find it.
+	app.SetRestartHandler(func() { instance.Register(app.CurrentConfig().Cliproxy.Host, app.EffectivePort()) })
 	app.StartModelCatalog()
 	// Keep a last-known-good copy of config.yaml (the engine writes it in place).
 	go func() {
@@ -719,11 +732,16 @@ func isBlacklisted(cfg *config.Config, model string) bool {
 }
 
 // sameOriginRequest decides whether a control-API request may proceed.
+// The Host comes first: it must be localhost, an IP or a host CarteLink is
+// configured on (boundHosts). A DNS-rebound page is same-origin to the browser
+// and connects over loopback, so its public name is all that gives it away.
 // Non-browser clients (no Origin, no Sec-Fetch-Site) are local processes and
 // pass. Browser requests pass only when the Origin host matches the Host
-// header (the embedded window and a tab opened on the UI itself) and the
-// Host is a loopback/IP/localhost name — never a DNS-rebound public name.
-func sameOriginRequest(r *http.Request) bool {
+// header (the embedded window and a tab opened on the UI itself).
+func sameOriginRequest(r *http.Request, boundHosts ...string) bool {
+	if !trustedHostHeader(r.Host, boundHosts) {
+		return false
+	}
 	origin := r.Header.Get("Origin")
 	site := r.Header.Get("Sec-Fetch-Site")
 	if origin == "" && (site == "" || site == "none" || site == "same-origin") {
@@ -738,13 +756,23 @@ func sameOriginRequest(r *http.Request) bool {
 			return false
 		}
 	}
-	hostOnly := r.Host
-	if h, _, err := net.SplitHostPort(r.Host); err == nil {
-		hostOnly = h
+	return true
+}
+
+// trustedHostHeader: an IP cannot be rebound, and localhost or a host the user
+// configured is not a name an attacker's page runs on.
+func trustedHostHeader(host string, boundHosts []string) bool {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
 	}
-	hostOnly = strings.Trim(hostOnly, "[]")
-	if strings.EqualFold(hostOnly, "localhost") || net.ParseIP(hostOnly) != nil {
+	host = strings.Trim(host, "[]")
+	if strings.EqualFold(host, "localhost") || net.ParseIP(host) != nil {
 		return true
+	}
+	for _, b := range boundHosts {
+		if host != "" && strings.EqualFold(host, strings.TrimSpace(b)) {
+			return true
+		}
 	}
 	return false
 }
