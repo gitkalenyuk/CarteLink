@@ -25,6 +25,10 @@ const AppName = "CarteLink"
 const (
 	KeyPrefix    = "cl-"
 	SecretPrefix = "cl-mgmt-"
+	// ScopedKeyPrefix marks keys limited to chosen models (see ScopedKey). A key
+	// with this prefix that is not in Config.ScopedKeys is refused, never treated
+	// as a full-access key.
+	ScopedKeyPrefix = "cl-api-"
 )
 
 // legacyHomeName is the data directory of the previous product name; it is
@@ -186,6 +190,16 @@ type Provider struct {
 	Enabled      bool              `json:"enabled"`
 }
 
+// ScopedKey is a client key that sees and accepts only the listed models. It
+// skips the routing (tiers, default model, switcher): the program asks for one
+// of its models by name and gets exactly that model.
+type ScopedKey struct {
+	ID     string   `json:"id"`
+	Name   string   `json:"name"`
+	Key    string   `json:"key"`
+	Models []string `json:"models"`
+}
+
 // Prompting injects a system prompt (and an optional AGENT.md) into every
 // model request, and can ask models that support it to think harder.
 type Prompting struct {
@@ -221,16 +235,19 @@ var ThinkingLevels = []string{"off", "low", "medium", "high", "max", "dynamic"}
 
 // Config is the on-disk schema (config.json inside Home()).
 type Config struct {
-	Schema         int        `json:"schema,omitempty"`
-	APIKey         string     `json:"apiKey"`
-	RequireKey     bool       `json:"requireKey"`
-	Auth           AuthConfig `json:"auth"`
-	Providers      []Provider `json:"providers"`
-	Routing        Routing    `json:"routing"`
-	Cliproxy       Cliproxy   `json:"cliproxy"`
-	ModelBlacklist []string   `json:"modelBlacklist"`
-	Prompting      Prompting  `json:"prompting"`
-	Desktop        Desktop    `json:"desktop"`
+	Schema     int        `json:"schema,omitempty"`
+	APIKey     string     `json:"apiKey"`
+	RequireKey bool       `json:"requireKey"`
+	Auth       AuthConfig `json:"auth"`
+	Providers  []Provider `json:"providers"`
+	Routing    Routing    `json:"routing"`
+	Cliproxy   Cliproxy   `json:"cliproxy"`
+	// ScopedKeys have their own endpoints (/api/scoped-keys); a config save
+	// never changes them.
+	ScopedKeys     []ScopedKey `json:"scopedKeys,omitempty"`
+	ModelBlacklist []string    `json:"modelBlacklist"`
+	Prompting      Prompting   `json:"prompting"`
+	Desktop        Desktop     `json:"desktop"`
 	// HiddenAccounts are account-provider ids the user removed; the Accounts
 	// page must not re-create them automatically.
 	HiddenAccounts []string `json:"hiddenAccounts,omitempty"`
@@ -444,6 +461,72 @@ func Defaults() *Config {
 // NewKey generates a client key ("cl-" + 48 hex chars).
 func NewKey() string { return KeyPrefix + randomHex(24) }
 
+// NewScopedKey generates a model-limited client key ("cl-api-" + 48 hex chars).
+func NewScopedKey() string { return ScopedKeyPrefix + randomHex(24) }
+
+// FindScopedKey returns the scoped key with this exact value, or nil.
+func (c *Config) FindScopedKey(key string) *ScopedKey {
+	for i := range c.ScopedKeys {
+		if c.ScopedKeys[i].Key == key {
+			return &c.ScopedKeys[i]
+		}
+	}
+	return nil
+}
+
+// CleanScopedModels trims a model list and drops duplicates (case-insensitive).
+func CleanScopedModels(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := map[string]bool{}
+	for _, m := range cleanStrings(in) {
+		if k := strings.ToLower(m); !seen[k] {
+			seen[k] = true
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// normScopedKeys tidies the scoped keys and rebuilds the engine's client key
+// list: the plain keys first (the first one is shown as the main key), then
+// the scoped keys. Only scoped keys we have a record of go to the engine.
+func normScopedKeys(c *Config) {
+	norm := make([]ScopedKey, 0, len(c.ScopedKeys))
+	for _, k := range c.ScopedKeys {
+		k.Key = strings.TrimSpace(k.Key)
+		if k.Key == "" {
+			continue
+		}
+		k.ID = strings.TrimSpace(k.ID)
+		if k.ID == "" {
+			k.ID = "k-" + randomHex(4)
+		}
+		k.Name = strings.TrimSpace(k.Name)
+		// An empty list stays empty: the key then gets no models at all.
+		k.Models = CleanScopedModels(k.Models)
+		norm = append(norm, k)
+	}
+	c.ScopedKeys = norm
+	keys := make([]string, 0, len(c.Cliproxy.APIKeys)+len(norm)+1)
+	for _, k := range c.Cliproxy.APIKeys {
+		if !strings.HasPrefix(k, ScopedKeyPrefix) {
+			keys = append(keys, k)
+		}
+	}
+	// Keep the engine's client keys aligned with the UI toggle: when the key
+	// is required but none were configured for the engine, use the gateway
+	// key; when not required the engine accepts anything (empty api-keys).
+	if c.RequireKey {
+		if len(keys) == 0 && c.APIKey != "" {
+			keys = append(keys, c.APIKey)
+		}
+		for _, k := range norm {
+			keys = append(keys, k.Key)
+		}
+	}
+	c.Cliproxy.APIKeys = keys
+}
+
 // Normalize applies load-time fixups: generated key, trimmed providers,
 // validated engine section.
 func Normalize(c *Config) {
@@ -508,12 +591,7 @@ func Normalize(c *Config) {
 	c.Providers = norm
 	c.ModelBlacklist = cleanStrings(c.ModelBlacklist)
 	c.Cliproxy = NormCliproxy(c.Cliproxy)
-	// Keep the engine's client keys aligned with the UI toggle: when the key
-	// is required but none were configured for the engine, use the gateway
-	// key; when not required the engine accepts anything (empty api-keys).
-	if c.RequireKey && len(c.Cliproxy.APIKeys) == 0 && c.APIKey != "" {
-		c.Cliproxy.APIKeys = []string{c.APIKey}
-	}
+	normScopedKeys(c)
 }
 
 // normPrompting validates the system-prompt section.

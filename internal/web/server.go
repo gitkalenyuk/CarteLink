@@ -197,6 +197,10 @@ func (a *App) SyncYAML(cfg *config.Config, retire ...string) error {
 			if k == "" || k == "cg-default-key" || k == "vg-cliproxy-default-key" || seen[k] {
 				continue
 			}
+			// A deleted scoped key must not come back from config.yaml.
+			if strings.HasPrefix(k, config.ScopedKeyPrefix) && cfg.FindScopedKey(k) == nil {
+				continue
+			}
 			seen[k] = true
 			merged = append(merged, k)
 		}

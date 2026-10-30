@@ -37,6 +37,8 @@ func (a *App) control(w http.ResponseWriter, r *http.Request, path string) {
 		a.apiServerRestart(w, r)
 	case path == "/generate-key" && r.Method == http.MethodPost:
 		a.apiGenerateKey(w, r)
+	case path == "/scoped-keys" || strings.HasPrefix(path, "/scoped-keys/"):
+		a.apiScopedKeys(w, r, strings.TrimPrefix(strings.TrimPrefix(path, "/scoped-keys"), "/"))
 	case path == "/account-to-provider" && r.Method == http.MethodPost:
 		a.apiAccountToProvider(w, r)
 	case path == "/provider-models" && r.Method == http.MethodPost:

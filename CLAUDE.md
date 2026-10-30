@@ -11,11 +11,13 @@
 |---|---|
 | `main.go` | Старт: одна копія, конфіг, лог, порт на сесію, root-middleware (гейт, пауза, мапінг, `/v1/models`), вікно/консоль |
 | `routing.go` | Мапінг моделей: рівні / таблиця / «розумний» fallback. **Лише точні збіги та явні префікси** |
+| `scoped.go` | Обмеження API-ключів із власними моделями (перевірка в root-middleware) |
 | `internal/config/` | `config.json`: схема, міграції (schema 2), `Normalize`, атомарний `Save`, `TierAliases` |
 | `internal/cliproxy/` | Вбудований рушій + `SyncConfigYAML` (керовані ключі `config.yaml`) |
 | `internal/web/server.go` | `App`: стан, порт сесії (`EffectivePort`), кеш моделей (`IsKnownModel`) |
 | `internal/web/auth*.go` | Telegram-гейт: `auth.go` логіка, `auth_gate.go` / `auth_gate_dev.go` (тег `devnoauth`) |
 | `internal/web/handlers_*.go`, `routes.go` | Control API `/api/*` (конфіг, сервер, OAuth, метрики, `/app/*`) |
+| `internal/web/handlers_scoped.go` | `/api/scoped-keys`: створення, зміна, видалення таких ключів |
 | `internal/web/metrics_store.go` | Статистика: бекенд сам вичитує `usage-queue` → `data/metrics.json` |
 | `internal/web/errlog.go` | Журнал помилок запитів → `data/errors.jsonl` (перехоплює root-middleware в `main.go`) |
 | `internal/web/handlers_models.go` | `/api/routing/apply-all`, `/api/switcher*`, `/api/errors*` |
@@ -28,7 +30,7 @@
 ## Сторінки UI
 Дизайн-система — `DESIGN.md` (темна консоль, один кораловий акцент, іконки-спрайт `#i-*` в
 `index.html` через `ic(name)` в `app.js`, без емодзі-іконок); продукт — `PRODUCT.md`.
-Сайдбар: Шлюз (Огляд, Моделі, Акаунти, Статистика) · Керування (Підключити програму, Провайдери,
+Сайдбар: Шлюз (Огляд, Моделі, Акаунти, API-ключі, Статистика) · Керування (Підключити програму, Провайдери,
 Налаштування, Довідка).
 Огляд (модель зараз + швидке перемикання/пресети, шлюз з адресою й ключем, KPI, графік 24 год,
 акаунти, останні помилки; майстер «3 кроки» ховається, коли все зроблено) · Підключити програму (інструкції
@@ -63,6 +65,12 @@ PowerShell/CMD/bash + файли) · Акаунти (OAuth) · Моделі (р�
   Codex — `model_context_window` у `clients.js` (`{{CTX}}`/`{{CTX_COMPACT}}`). `/v1/models?client_version=`
   (каталог Codex) віддається рушієм без змін.
 - Тест наскрізно: `Desktop\CarteLink_extras\tests\prompttest.js` + ехо-провайдер (`%TEMP%\cl-echo-provider.js`).
+
+## API-ключі з власними моделями
+- `config.json → scopedKeys` (`config.ScopedKey`), префікс `cl-api-`. Запис — лише через `/api/scoped-keys`; `apiConfigSave` їх не змінює.
+- Ключ із префіксом без запису в конфігу завжди відхиляється (401) і прибирається з `config.yaml`: він не має стати ключем без обмежень.
+- `scopedAllowedPath` — білий список: новий маршрут рушія закритий, доки в ньому не перевіряється модель. `requestKeys` має збігатися з місцями ключа в `config_access/provider.go` рушія.
+- Тіло запиту завжди кодується заново: Go бере останній дублікат `model`, рушій — перший.
 
 ## Плагіни рушія (нові типи акаунтів)
 - `SyncConfigYAML` пише `plugins.enabled: true` і `plugins.dir` = `data/cliproxy/plugins`;

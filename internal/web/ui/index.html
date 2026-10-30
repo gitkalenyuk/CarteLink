@@ -78,6 +78,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
         <button data-page="home" class="active"><svg class="i"><use href="#i-home"/></svg><span>Огляд</span></button>
         <button data-page="models"><svg class="i"><use href="#i-route"/></svg><span>Моделі</span></button>
         <button data-page="cliproxy"><svg class="i"><use href="#i-users"/></svg><span>Акаунти</span></button>
+        <button data-page="apis"><svg class="i"><use href="#i-code"/></svg><span>API-ключі</span></button>
         <button data-page="metrics"><svg class="i"><use href="#i-chart"/></svg><span>Статистика</span><span class="nav-badge" id="navErrBadge" style="display:none"></span></button>
       </div>
       <div class="nav-group">
@@ -233,6 +234,31 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
           <div id="clientList" class="client-list"></div>
         </div>
         <div class="card" id="clientDetail"></div>
+      </div>
+    </section>
+
+    <!-- API KEYS -->
+    <section id="page-apis" class="page">
+      <div class="view-head">
+        <h1>API-ключі</h1>
+        <p class="sub">Окремий ключ для кожної програми: вона бачить і може використовувати лише обрані для неї моделі. Ключі працюють одночасно, нічого перемикати не треба.</p>
+      </div>
+
+      <div class="card notice" id="apiNoKeyCheck" style="display:none">Перевірку ключа вимкнено: програма без ключа бачить усі моделі. Обмеження діють лише для запитів із цими ключами. Увімкни «Вимагати API ключ від програм» у Налаштуваннях.</div>
+
+      <div class="card">
+        <div class="card-title"><svg class="i"><use href="#i-globe"/></svg>Адреса для всіх ключів</div>
+        <div class="conn-list">
+          <div class="conn-row"><span>Адреса</span><input id="apiBase" readonly /><button class="btn btn-mini btn-icon" data-copy="apiBase" title="Копіювати"><svg class="i i-sm"><use href="#i-copy"/></svg></button></div>
+          <div class="conn-row"><span>OpenAI <span class="tag">/v1</span></span><input id="apiOpenAI" readonly /><button class="btn btn-mini btn-icon" data-copy="apiOpenAI" title="Копіювати"><svg class="i i-sm"><use href="#i-copy"/></svg></button></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><svg class="i"><use href="#i-code"/></svg>Мої API
+          <button class="btn btn-sm btn-brand right" id="apiAdd"><svg class="i i-sm"><use href="#i-plus"/></svg>Додати API</button>
+        </div>
+        <div id="apiList" class="api-list"></div>
       </div>
     </section>
 
@@ -809,6 +835,38 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   </div>
   <div class="gate-foot">Secret YT_cartel 🧠 · CarteLink · вхід через Telegram</div>
 </div>
+
+<dialog id="apiDialog" class="api-dialog">
+  <div id="apiDlgForm">
+    <h2 id="apiDlgTitle">Новий API</h2>
+    <div class="field">
+      <label for="apiName">Назва</label>
+      <input id="apiName" maxlength="80" placeholder="Наприклад: Для сайту" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Моделі, які видає цей API <span class="hint right" id="apiPicked"></span></label>
+      <input id="apiModelSearch" class="search-input" placeholder="Пошук моделі…" autocomplete="off">
+      <div id="apiModelList" class="api-model-list"></div>
+    </div>
+    <div class="msg" id="apiDlgMsg"></div>
+    <div class="btn-row api-dlg-actions">
+      <button class="btn" id="apiDlgCancel">Скасувати</button>
+      <button class="btn btn-brand" id="apiDlgSave">Створити</button>
+    </div>
+  </div>
+  <div id="apiDlgDone" style="display:none">
+    <h2>API створено ✓</h2>
+    <p class="muted">Підключи цей ключ до своєї програми. Вона бачитиме лише обрані моделі.</p>
+    <div class="conn-list">
+      <div class="conn-row"><span>Адреса</span><input id="apiDoneBase" readonly /><button class="btn btn-mini btn-icon" data-copy="apiDoneBase" title="Копіювати"><svg class="i i-sm"><use href="#i-copy"/></svg></button></div>
+      <div class="conn-row"><span>OpenAI <span class="tag">/v1</span></span><input id="apiDoneOpenAI" readonly /><button class="btn btn-mini btn-icon" data-copy="apiDoneOpenAI" title="Копіювати"><svg class="i i-sm"><use href="#i-copy"/></svg></button></div>
+      <div class="conn-row"><span>API ключ</span><input id="apiDoneKey" readonly /><button class="btn btn-mini btn-icon" data-copy="apiDoneKey" title="Копіювати"><svg class="i i-sm"><use href="#i-copy"/></svg></button></div>
+    </div>
+    <div class="btn-row api-dlg-actions">
+      <button class="btn btn-brand" id="apiDlgClose">Готово</button>
+    </div>
+  </div>
+</dialog>
 
 <div id="toast" class="toast hidden"></div>
 <script src="presets.js?v=2.5.2"></script>

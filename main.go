@@ -152,7 +152,9 @@ func main() {
 	//   3. pause-gate: while "stopped" from the UI, API traffic gets 503 but
 	//      the panel, control API and healthz stay alive (they share the
 	//      port — a hard server shutdown would kill the panel too);
-	//   4. model mapping — rewrite the requested model name on the chat
+	//   4. scoped API keys: a key limited to chosen models reaches only those
+	//      (see scoped.go);
+	//   5. model mapping — rewrite the requested model name on the chat
 	//      endpoints (read per request, so saving it in the UI applies
 	//      immediately) and serve an honest /v1/models.
 	root := func(c *gin.Context) {
@@ -199,15 +201,27 @@ func main() {
 			})
 			return
 		}
+		if !isPanel && !enforceScopedKey(c, app) {
+			return
+		}
+		scoped := scopedKeyFromContext(c)
 		if c.Request.Method == http.MethodPost {
 			switch p {
 			case "/v1/messages", "/v1/messages/count_tokens", "/v1/chat/completions",
 				"/v1/completions", "/v1/responses":
 				rewriteModel(c, app)
+			default:
+				if scoped != nil && scopedBodyModelPath(p) {
+					rewriteModel(c, app)
+				}
 			}
 		}
 		if c.Request.Method == http.MethodGet && (p == "/v1/models" || p == "/models") {
 			handleAugmentedModels(c, app)
+			return
+		}
+		if scoped != nil && c.Request.Method == http.MethodGet && strings.HasPrefix(p, "/v1beta/models") {
+			handleScopedEngineList(c, app, scoped)
 			return
 		}
 		isModelAPI := strings.HasPrefix(p, "/v1") || p == "/models"
@@ -243,9 +257,10 @@ func main() {
 			if web.IsContentFilterError(msg) {
 				go app.UnblockAfterContentFilter(sent)
 			}
-		} else if st < 400 && apiFamily(p) != "" {
+		} else if st < 400 && apiFamily(p) != "" && scoped == nil {
 			// A real answer came back: the switcher may be set to move on
-			// to its second model after the first successful one.
+			// to its second model after the first successful one. Scoped keys
+			// work on their own and do not touch it.
 			app.SwitcherAutoAdvance(gs)
 		}
 	}
@@ -513,8 +528,14 @@ func rewriteModel(c *gin.Context, app *web.App) {
 	}
 	_ = c.Request.Body.Close()
 
+	scoped := scopedKeyFromContext(c)
 	var payload map[string]any
 	if err := json.Unmarshal(body, &payload); err != nil {
+		// A scoped key must name a model we can read.
+		if scoped != nil {
+			scopedReject(c, app, http.StatusBadRequest, "invalid_request", "", "request body is not valid JSON")
+			return
+		}
 		// Not JSON (or empty) — pass the original bytes through untouched.
 		c.Request.Body = io.NopCloser(bytes.NewReader(body))
 		return
@@ -522,10 +543,22 @@ func rewriteModel(c *gin.Context, app *web.App) {
 
 	want, _ := payload["model"].(string)
 	cfg := app.CurrentConfig()
-	resolved := resolveModel(cfg, want, app.IsKnownModel)
+	var resolved string
+	if scoped != nil {
+		// No routing here: the program gets the model it named, or a refusal.
+		var ok bool
+		if resolved, ok = scopedModelMatch(scoped, want); !ok {
+			scopedModelRefused(c, app, scoped, want)
+			return
+		}
+	} else {
+		resolved = resolveModel(cfg, want, app.IsKnownModel)
+	}
 	c.Set(ctxWantModel, want)
 	c.Set(ctxResolvedModel, resolved)
-	changed := false
+	// Scoped: always re-encode, so the engine reads the very "model" checked
+	// above (with a duplicate key Go keeps the last one, the engine the first).
+	changed := scoped != nil
 	if resolved != want {
 		payload["model"] = resolved
 		changed = true
@@ -858,13 +891,18 @@ func isAnthropicModelsRequest(c *gin.Context) bool {
 const internalModelsHeader = "X-CarteLink-Internal"
 
 func handleAugmentedModels(c *gin.Context, app *web.App) {
-	if c.GetHeader(internalModelsHeader) == "1" {
+	scoped := scopedKeyFromContext(c)
+	if scoped == nil && c.GetHeader(internalModelsHeader) == "1" {
 		c.Next()
 		return
 	}
 	// Codex asks with ?client_version= and expects the engine's own catalogue
 	// format ({"models":[…]} with context windows), not an OpenAI list.
 	if _, ok := c.Request.URL.Query()["client_version"]; ok {
+		if scoped != nil {
+			handleScopedEngineList(c, app, scoped)
+			return
+		}
 		c.Next()
 		return
 	}
@@ -899,6 +937,14 @@ func handleAugmentedModels(c *gin.Context, app *web.App) {
 	}
 	cfg := app.CurrentConfig()
 
+	// A scoped key sees its own models and nothing else.
+	if scoped != nil {
+		for _, m := range scopedCatalog(scoped, upstream.Data) {
+			add(m)
+		}
+		upstream.Data = nil
+	}
+
 	// 1. Models the engine really serves (cloaked ids shown by their real name).
 	for _, raw := range upstream.Data {
 		id, _ := raw["id"].(string)
@@ -916,7 +962,7 @@ func handleAugmentedModels(c *gin.Context, app *web.App) {
 
 	// 2. Models of enabled CarteLink providers.
 	for _, p := range cfg.Providers {
-		if !p.Enabled {
+		if !p.Enabled || scoped != nil {
 			continue
 		}
 		for _, m := range p.Models {
@@ -928,7 +974,7 @@ func handleAugmentedModels(c *gin.Context, app *web.App) {
 	// 3. Aliases that currently resolve to a real model (tier aliases, table
 	// keys) and official Claude names the mapping rewrites — so client model
 	// pickers only offer names that will actually work.
-	if isAnthropic {
+	if isAnthropic && scoped == nil {
 		// Claude Code (CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1) lists
 		// only ids containing "claude" in its /model picker: offer the main
 		// model under its real name, plus fast/max when they differ.
@@ -936,12 +982,14 @@ func handleAugmentedModels(c *gin.Context, app *web.App) {
 			add(e)
 		}
 	}
-	for _, a := range servedAliases(cfg) {
-		add(catalogModel{ID: a, DisplayName: a + " → " + resolveModel(cfg, a, nil), OwnedBy: "cartelink"})
-	}
-	for _, m := range officialClaudeModels {
-		if resolveModel(cfg, m.ID, nil) != m.ID {
-			add(m)
+	if scoped == nil {
+		for _, a := range servedAliases(cfg) {
+			add(catalogModel{ID: a, DisplayName: a + " → " + resolveModel(cfg, a, nil), OwnedBy: "cartelink"})
+		}
+		for _, m := range officialClaudeModels {
+			if resolveModel(cfg, m.ID, nil) != m.ID {
+				add(m)
+			}
 		}
 	}
 
@@ -968,7 +1016,7 @@ func handleAugmentedModels(c *gin.Context, app *web.App) {
 		for _, m := range allModels {
 			// Real limits of the model this id ends up on (200K/64K if unknown).
 			target := resolveModel(cfg, m.ID, app.IsKnownModel)
-			if target == "" {
+			if target == "" || scoped != nil {
 				target = m.ID
 			}
 			caps := app.CapsFor(target)

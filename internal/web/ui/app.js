@@ -157,6 +157,7 @@ function showPage(name) {
   if (name === 'providers') refreshProviders();
   if (name === 'models') refreshModels();
   if (name === 'cliproxy') refreshCliproxy();
+  if (name === 'apis') refreshApis();
   if (name === 'metrics') {
     refreshMetrics();
     refreshErrors();
@@ -2219,7 +2220,8 @@ async function renderClipKeys() {
   $('clip-key-add').disabled = false;
   try {
     const keys = await mgmt('GET', 'api-keys');
-    const list = Array.isArray(keys) ? keys : (keys && keys['api-keys']) || [];
+    // Keys limited to chosen models are managed on their own page.
+    const list = (Array.isArray(keys) ? keys : (keys && keys['api-keys']) || []).filter((k) => !String(k).startsWith('cl-api-'));
     const main = (LAST_EP && LAST_EP.key) || '';
     el.innerHTML = list.length
       ? list.map((k) => '<div class="key-item"><span class="mono small">' + esc(maskSecret(k)) + '</span>' +
@@ -2257,6 +2259,174 @@ async function addClipKey() {
   }
 }
 $('clip-key-add').addEventListener('click', addClipKey);
+
+// ---------- API keys: one key per program, each with its own models ----------
+let API_KEYS = [];
+let apiEditId = '';
+const apiPicked = new Set();
+
+async function refreshApis() {
+  try {
+    const [r, ep] = await Promise.all([api('/scoped-keys'), api('/endpoints')]);
+    API_KEYS = r.keys || [];
+    LAST_EP = ep;
+    $('apiBase').value = ep.base;
+    $('apiOpenAI').value = ep.base + '/v1';
+    $('apiNoKeyCheck').style.display = r.requireKey ? 'none' : '';
+  } catch (e) {
+    $('apiList').innerHTML = '<span class="muted">' + esc(t('недоступно: {e}', { e: e.message })) + '</span>';
+    return;
+  }
+  renderApis();
+  // The model list decides which chips get the "unavailable" mark.
+  await collectModelOptions();
+  renderApis();
+}
+
+function apiModelServed(id) {
+  if (isModelBlacklisted(id)) return false;
+  const low = String(id).toLowerCase();
+  return !MODEL_OPTS.length || MODEL_OPTS.some((m) => String(m).toLowerCase() === low);
+}
+
+function renderApis() {
+  const el = $('apiList');
+  if (!API_KEYS.length) {
+    el.innerHTML = '<div class="muted api-empty">' + esc(t('Ще немає жодного API. Натисни «Додати API», щоб створити перший.')) + '</div>';
+    return;
+  }
+  el.innerHTML = API_KEYS.map((k) => '<div class="api-row" data-id="' + esc(k.id) + '">' +
+    '<div class="api-row-head"><b class="api-name">' + esc(k.name) + '</b><span class="mono small muted">' + esc(maskSecret(k.key)) + '</span>' +
+    '<span class="btn-row right">' +
+    '<button class="btn btn-mini" data-act="copy">' + ic('copy', 'i-sm') + esc(t('Скопіювати ключ')) + '</button>' +
+    '<button class="btn btn-mini" data-act="edit">' + ic('edit', 'i-sm') + esc(t('Змінити')) + '</button>' +
+    '<button class="btn btn-mini btn-danger" data-act="del">' + ic('trash', 'i-sm') + esc(t('Видалити')) + '</button>' +
+    '</span></div>' +
+    '<div class="api-models">' + (k.models || []).map((m) => apiModelServed(m)
+      ? '<span class="tag">' + esc(m) + '</span>'
+      : '<span class="tag api-off" title="' + esc(t('Жоден акаунт зараз не обслуговує цю модель')) + '">' + esc(m) + '</span>').join('') + '</div>' +
+    '</div>').join('');
+  el.querySelectorAll('[data-act]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const k = API_KEYS.find((x) => x.id === b.closest('.api-row').dataset.id);
+      if (!k) return;
+      if (b.dataset.act === 'copy') copyVal(k.key, 'Ключ скопійовано');
+      if (b.dataset.act === 'edit') openApiDialog(k);
+      if (b.dataset.act === 'del') deleteApi(k);
+    });
+  });
+}
+
+async function deleteApi(k) {
+  if (!confirmDo('Видалити цей API? Програми з цим ключем перестануть працювати.')) return;
+  try {
+    await api('/scoped-keys/' + encodeURIComponent(k.id), { method: 'DELETE' });
+    toast(t('API видалено ✓'));
+    await refreshApis();
+  } catch (e) {
+    toast(t('Не вдалось: {e}', { e: e.message }), true);
+  }
+}
+
+function renderApiPicker() {
+  const seen = new Set();
+  const row = (id) => {
+    seen.add(String(id).toLowerCase());
+    return '<label class="api-model" data-id="' + esc(String(id).toLowerCase()) + '"><input type="checkbox" value="' + esc(id) + '"' +
+      (apiPicked.has(id) ? ' checked' : '') + '><span class="mono">' + esc(id) + '</span></label>';
+  };
+  let html = '';
+  for (const g of MODEL_GROUPS) {
+    const rows = g.options.filter((o) => !isModelBlacklisted(o.value) && !seen.has(String(o.value).toLowerCase())).map((o) => row(o.value)).join('');
+    if (rows) html += '<div class="api-model-group"><div class="tier-group-title">' + esc(g.label) + '</div>' + rows + '</div>';
+  }
+  // Models of this key that nothing serves right now stay visible, so they
+  // can be seen and unticked.
+  const gone = Array.from(apiPicked).filter((id) => !seen.has(String(id).toLowerCase()));
+  if (gone.length) html += '<div class="api-model-group"><div class="tier-group-title">' + esc(t('Зараз недоступні')) + '</div>' + gone.map(row).join('') + '</div>';
+  $('apiModelList').innerHTML = html || '<div class="muted api-empty">' + esc(t('Немає моделей. Спершу підключи акаунт на сторінці «Акаунти».')) + '</div>';
+  $('apiModelList').querySelectorAll('input').forEach((c) => {
+    c.addEventListener('change', () => {
+      if (c.checked) apiPicked.add(c.value); else apiPicked.delete(c.value);
+      paintApiPicked();
+    });
+  });
+  filterApiPicker();
+  paintApiPicked();
+}
+
+function paintApiPicked() {
+  $('apiPicked').textContent = t('Обрано: {n}', { n: apiPicked.size });
+}
+
+function filterApiPicker() {
+  const q = $('apiModelSearch').value.trim().toLowerCase();
+  $('apiModelList').querySelectorAll('.api-model-group').forEach((g) => {
+    let any = false;
+    g.querySelectorAll('.api-model').forEach((m) => {
+      const hit = !q || m.dataset.id.includes(q);
+      m.style.display = hit ? '' : 'none';
+      any = any || hit;
+    });
+    g.style.display = any ? '' : 'none';
+  });
+}
+
+async function openApiDialog(k) {
+  apiEditId = k ? k.id : '';
+  apiPicked.clear();
+  ((k && k.models) || []).forEach((m) => apiPicked.add(m));
+  $('apiDlgTitle').textContent = t(k ? 'Змінити API' : 'Новий API');
+  $('apiDlgSave').textContent = t(k ? 'Зберегти' : 'Створити');
+  $('apiName').value = k ? k.name : '';
+  $('apiModelSearch').value = '';
+  $('apiDlgMsg').textContent = '';
+  $('apiDlgForm').style.display = '';
+  $('apiDlgDone').style.display = 'none';
+  renderApiPicker();
+  // A modal dialog covers the page: the toast has to live inside it for now.
+  $('apiDialog').appendChild($('toast'));
+  $('apiDialog').showModal();
+  $('apiName').focus();
+  if (!MODEL_GROUPS.length) {
+    await collectModelOptions();
+    renderApiPicker();
+  }
+}
+
+async function saveApi() {
+  const name = $('apiName').value.trim();
+  if (!name) { msg($('apiDlgMsg'), t('Вкажи назву'), false); $('apiName').focus(); return; }
+  if (!apiPicked.size) { msg($('apiDlgMsg'), t('Обери хоча б одну модель'), false); return; }
+  const body = JSON.stringify({ name: name, models: Array.from(apiPicked) });
+  $('apiDlgSave').disabled = true;
+  try {
+    if (apiEditId) {
+      await api('/scoped-keys/' + encodeURIComponent(apiEditId), { method: 'PUT', body: body });
+      $('apiDialog').close();
+      toast(t('Збережено ✓'));
+    } else {
+      const r = await api('/scoped-keys', { method: 'POST', body: body });
+      $('apiDoneBase').value = $('apiBase').value;
+      $('apiDoneOpenAI').value = $('apiOpenAI').value;
+      $('apiDoneKey').value = r.key.key;
+      $('apiDlgForm').style.display = 'none';
+      $('apiDlgDone').style.display = '';
+    }
+    await refreshApis();
+  } catch (e) {
+    msg($('apiDlgMsg'), t('Не вдалось: {e}', { e: e.message }), false);
+  } finally {
+    $('apiDlgSave').disabled = false;
+  }
+}
+
+$('apiDialog').addEventListener('close', () => document.body.appendChild($('toast')));
+$('apiAdd').addEventListener('click', () => openApiDialog(null));
+$('apiDlgCancel').addEventListener('click', () => $('apiDialog').close());
+$('apiDlgClose').addEventListener('click', () => $('apiDialog').close());
+$('apiDlgSave').addEventListener('click', saveApi);
+$('apiModelSearch').addEventListener('input', filterApiPicker);
 
 // ---------- metrics page (persistent store on the backend) ----------
 async function refreshMetrics() {
