@@ -551,6 +551,33 @@ details[open] > :not(summary) { animation: reveal var(--t3) var(--ease) both; }
 .oauth-badge.sub { color: var(--text-2); background: var(--surface-3); }
 .oauth-badge.free { color: var(--ok); background: var(--ok-soft); }
 .oauth-badge.freemium { color: var(--warn); background: var(--warn-soft); }
+.plug-picker { margin-top: 10px; padding: 14px; border: 1px solid var(--border-2); border-radius: 10px; background: var(--surface-2); }
+.plug-picker.hidden { display: none; }
+.plug-picker-head { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.plug-warn { margin: 8px 0 12px; color: var(--warn); }
+.plug-choices { display: flex; flex-direction: column; gap: 8px; }
+.plug-choices .radio-label { background: var(--surface); }
+.plug-choices .radio-content { min-width: 0; }
+.plug-choices .radio-desc { overflow-wrap: anywhere; }
+.plug-note { color: var(--warn); }
+.plug-off { opacity: 0.55; cursor: not-allowed; }
+.plug-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.plug-config { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.plug-config:empty { display: none; }
+.plug-field { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+.plug-field-name { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.plug-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 8px; }
+.plug-toolbar input { flex: 1 1 220px; min-width: 0; }
+.plug-row { display: flex; align-items: flex-start; gap: 12px; padding: 12px 6px; border-bottom: 1px solid var(--border); }
+.plug-row:last-child { border-bottom: 0; }
+.plug-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.plug-name { font-size: 13.5px; }
+.plug-desc { font-size: 12.5px; color: var(--text-2); overflow-wrap: anywhere; }
+.plug-btns { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; flex: 0 0 auto; max-width: 45%; }
+@media (max-width: 640px) {
+  .plug-row { flex-direction: column; }
+  .plug-btns { justify-content: flex-start; max-width: 100%; }
+}
 .device-code { margin-left: 10px; padding: 3px 10px; border-radius: 7px; background: var(--warn-soft); color: var(--warn); font-family: var(--mono); font-weight: 700; letter-spacing: 0.06em; }
 
 .auth-file-list { display: flex; flex-direction: column; }

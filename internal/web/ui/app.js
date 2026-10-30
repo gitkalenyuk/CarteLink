@@ -91,7 +91,7 @@ async function mgmt(method, path, body) {
   let data = null;
   try { data = JSON.parse(text); } catch (e) { /* non-json */ }
   if (!res.ok) {
-    throw new Error((data && data.error) || text || res.status);
+    throw new Error((data && (data.message || data.error)) || text || res.status);
   }
   return data;
 }
@@ -157,6 +157,7 @@ function showPage(name) {
   if (name === 'providers') refreshProviders();
   if (name === 'models') refreshModels();
   if (name === 'cliproxy') refreshCliproxy();
+  if (name === 'plugins') refreshPlugins();
   if (name === 'apis') refreshApis();
   if (name === 'metrics') {
     refreshMetrics();
@@ -355,6 +356,7 @@ function populateModelSelect(sel, curValue, emptyLabel) {
 
 function provTitle(prov) {
   prov = String(prov || '');
+  if (prov === 'workbuddy') return 'WorkBuddy';
   return prov.charAt(0).toUpperCase() + prov.slice(1);
 }
 
@@ -1677,32 +1679,109 @@ const OAUTH_PROVIDERS = [
 
 let oauthTimer = null;
 
-// Extra account types from the engine's official plugin store. The plugin is
-// downloaded and loaded on first use (no restart needed).
-const PLUGIN_ACCOUNTS = [
-  { id: 'gemini-cli', plugin: 'gemini-cli', provider: 'gemini-cli', label: 'Gemini CLI', kind: 'oauth', badge: 'Безкоштовно', badgeClass: 'free', tip: 'Звичайний Google-акаунт через вхід Gemini CLI — окремі від Antigravity безкоштовні ліміти.' },
-  { id: 'kiro', plugin: 'kiro', provider: 'kiro', label: 'Kiro (AWS)', kind: 'oauth', badge: 'Безкоштовно', badgeClass: 'free', tip: 'Акаунт Kiro / AWS Builder ID → моделі Claude. Після натискання введи показаний код підтвердження на сторінці AWS.' },
-  { id: 'mirasim', plugin: 'mirasim', provider: 'mirasim', label: 'Mirasim', kind: 'oauth', badge: 'Акаунт', badgeClass: 'freemium', tip: 'Акаунт Mirasim → моделі Claude і GPT.' },
-  { id: 'clinepass', plugin: 'clinepassbridge', label: 'Cline Pass', kind: 'console', badge: 'Підписка', badgeClass: 'sub', tip: 'Підписка Cline Pass. Відкриється консоль плагіна: додай API-ключ Cline Pass і завантаж моделі.' },
-  { id: 'commandcode', plugin: 'commandcode', label: 'CommandCode', kind: 'apikey', badge: 'API-ключ', badgeClass: 'sub', tip: 'Ключ commandcode.ai (user_…) → моделі DeepSeek і GLM (commandcode/…).' },
-  { id: 'vertex', label: 'Vertex AI', kind: 'vertex', badge: 'Google Cloud', badgeClass: 'sub', tip: 'JSON-ключ сервісного акаунта Google Cloud з увімкненим Vertex AI. Оплата — за тарифами Google Cloud.' },
-  { id: 'copilot', label: 'GitHub Copilot', kind: 'unavailable', badge: 'Немає для Windows', badgeClass: 'sub', tip: 'Плагін Copilot поки випускається лише для Linux — на Windows його неможливо встановити.' },
-  { id: 'cursor', label: 'Cursor', kind: 'unavailable', badge: 'Немає для Windows', badgeClass: 'sub', tip: 'Плагін Cursor поки випускається лише для Linux — на Windows його неможливо встановити.' },
+// Services reachable through the engine's plugin store. A service may have
+// several plugins: the user picks one, CarteLink downloads it and signs in
+// through it. Provider plugins missing from this list still appear (see
+// pluginServices), so a new store entry needs no release of CarteLink.
+const PLUGIN_SERVICES = [
+  { id: 'workbuddy', label: 'WorkBuddy', badge: 'Кредити', badgeClass: 'freemium', tip: 'Акаунт Tencent WorkBuddy / CodeBuddy → моделі GLM, DeepSeek, Kimi, Hunyuan. Доступ неофіційний: краще окремий акаунт.', plugins: ['workbuddy', 'freetier2api'] },
+  { id: 'gemini-cli', label: 'Gemini CLI', badge: 'Безкоштовно', badgeClass: 'free', tip: 'Звичайний Google-акаунт через вхід Gemini CLI — окремі від Antigravity безкоштовні ліміти.', plugins: ['gemini-cli'] },
+  { id: 'kiro', label: 'Kiro (AWS)', badge: 'Безкоштовно', badgeClass: 'free', tip: 'Акаунт Kiro / AWS Builder ID → моделі Claude. Після натискання введи показаний код підтвердження на сторінці AWS.', plugins: ['kiro', 'kiro-ha', 'kiro4cpa'] },
+  { id: 'mirasim', label: 'Mirasim', badge: 'Акаунт', badgeClass: 'freemium', tip: 'Акаунт Mirasim → моделі Claude і GPT.', plugins: ['mirasim', 'mirasim-proxy'] },
+  { id: 'clinepass', label: 'Cline Pass', badge: 'Підписка', badgeClass: 'sub', tip: 'Підписка Cline Pass. Відкриється консоль плагіна: додай API-ключ Cline Pass і завантаж моделі.', plugins: ['clinepassbridge'] },
+  { id: 'commandcode', label: 'CommandCode', badge: 'API-ключ', badgeClass: 'sub', tip: 'Ключ commandcode.ai (user_…) → моделі DeepSeek і GLM (commandcode/…).', plugins: ['commandcode', 'commandcode-cliproxyapi', 'commandcode-go-cliproxyapi'] },
+  { id: 'copilot', label: 'GitHub Copilot', badge: 'Підписка', badgeClass: 'sub', tip: 'Підписка GitHub Copilot.', plugins: ['github-copilot', 'cliproxyapi-copilot'] },
+  { id: 'cursor', label: 'Cursor', badge: 'Підписка', badgeClass: 'sub', tip: 'Підписка Cursor.', plugins: ['spx-cursor', 'cursor-agent', 'cursor'] },
+  { id: 'freetier', label: 'Qoder, Trae, MiniMax, CodeArts', badge: 'Безкоштовно', badgeClass: 'free', tip: 'Кілька сервісів з безкоштовними квотами в одному плагіні.', plugins: ['freetier2api'] },
+  { id: 'opencode-go', label: 'OpenCode Go', badge: 'Підписка', badgeClass: 'sub', tip: 'Підписка OpenCode Go → 44 моделі. Вхід через браузер або ключ, залежно від плагіна.', plugins: ['opencode-go-oauth', 'opencode-go-provider', 'opencode-go-cliproxyapi'] },
+  { id: 'opencode-zen', label: 'OpenCode Zen', badge: 'Безкоштовно', badgeClass: 'free', tip: 'Безкоштовні моделі OpenCode Zen. Деякі плагіни працюють без ключа.', plugins: ['oc2cpa', 'cpa-freetier-plugin', 'freetier2api'] },
+  { id: 'vertex', label: 'Vertex AI', kind: 'vertex', badge: 'Google Cloud', badgeClass: 'sub', tip: 'JSON-ключ сервісного акаунта Google Cloud з увімкненим Vertex AI. Оплата — за тарифами Google Cloud.', plugins: [] },
 ];
+
+// How a plugin signs in when the engine's plugin info doesn't say enough.
+const PLUGIN_LOGIN = { clinepassbridge: 'console', freetier2api: 'console', commandcode: 'apikey' };
+
+// Written once, before the first sign-in. WorkBuddy's plugin otherwise deletes
+// a Global account when its credits run out and reports fake activity for
+// daily credits. Values the user changes later are kept.
+const PLUGIN_SAFE_CONFIG = { workbuddy: { lifecycle_auto: false, daily_bonus: false, checkin_auto: false } };
+
+const PLUGIN_NOTES = {
+  workbuddy: 'CarteLink вимикає в цьому плагіні автовидалення акаунта без кредитів і автоотримання щоденних кредитів.',
+  freetier2api: 'Цей плагін сам щодня відмічається й виконує завдання сервісів, а ще підключає OpenCode Zen. Це може порушувати умови сервісів.',
+};
+
+const PLUGIN_NO_BUILD = { cursor: 'windows', 'cliproxyapi-copilot': 'windows', 'mirasim-proxy': 'all', 'opencode-go-pool': 'all', 'opencode-go-quota': 'all' };
+const NOT_A_SERVICE = { 'kimi-tools': true };
+
+// opencode-cloak disguises OpenCode traffic as Claude Code so a Claude
+// subscription isn't flagged as third-party use: not offered.
+const HIDDEN_PLUGINS = { 'opencode-cloak': true };
+
+const PLUGIN_STORE_TTL = 2 * 60 * 1000;
+let PLUGIN_STORE = null;
+let PLUGIN_STORE_AT = 0;
+let PLUGIN_PICKER = null;
+let PLUG_FILTER = 'all';
+
+// The engine HTML-escapes every store string; esc() escapes again when rendering.
+function unhtml(s) {
+  return String(s == null ? '' : s).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#34;/g, '"').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+}
+
+async function loadPluginStore(force) {
+  if (!force && PLUGIN_STORE && Date.now() - PLUGIN_STORE_AT < PLUGIN_STORE_TTL) return PLUGIN_STORE;
+  const r = (await mgmt('GET', 'plugin-store')) || {};
+  const byId = {};
+  (r.plugins || []).forEach((p) => {
+    const e = {
+      id: p.id, name: unhtml(p.name) || p.id, description: unhtml(p.description), author: unhtml(p.author),
+      version: unhtml(p.version), repository: unhtml(p.repository), tags: (p.tags || []).map(unhtml),
+      installed: !!p.installed, enabled: !!p.enabled, registered: !!p.registered, update: !!p.update_available,
+    };
+    if (!HIDDEN_PLUGINS[e.id]) byId[e.id] = e;
+  });
+  PLUGIN_STORE = byId;
+  PLUGIN_STORE_AT = Date.now();
+  return byId;
+}
+
+function pluginIsProvider(p) {
+  return !NOT_A_SERVICE[p.id] && p.tags.some((x) => x.toLowerCase() === 'provider');
+}
+
+// The curated services, then one service per provider plugin they don't cover.
+function pluginServices() {
+  const out = PLUGIN_SERVICES.map((s) => Object.assign({}, s));
+  if (!PLUGIN_STORE) return out;
+  const known = {};
+  out.forEach((s) => s.plugins.forEach((id) => { known[id] = true; }));
+  Object.values(PLUGIN_STORE).filter((p) => pluginIsProvider(p) && !known[p.id])
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .forEach((p) => out.push({ id: 'plugin:' + p.id, label: p.name, badge: 'Плагін', badgeClass: 'sub', tip: p.description, plugins: [p.id] }));
+  return out;
+}
+
+function pluginServiceOf(id) {
+  return pluginServices().find((s) => s.plugins.indexOf(id) >= 0) || null;
+}
+
+function pluginNoBuild(id) {
+  const v = PLUGIN_NO_BUILD[id];
+  return v === 'all' || (v === 'windows' && /win/i.test(navigator.platform || ''));
+}
 
 function renderPluginButtons() {
   const box = $('plugin-buttons');
   if (!box) return;
-  box.innerHTML = PLUGIN_ACCOUNTS.map((p) => {
-    const verb = p.kind === 'oauth' ? t('{name} — увійти', { name: p.label })
-      : p.kind === 'vertex' ? t('{name} — імпорт JSON', { name: p.label })
-        : p.kind === 'unavailable' ? p.label : t('{name} — додати', { name: p.label });
+  box.innerHTML = pluginServices().map((s) => {
+    const verb = s.kind === 'vertex' ? t('{name} — імпорт JSON', { name: s.label }) : t('{name} — увійти', { name: s.label });
     return '<div class="oauth-btn-wrap">' +
-      '<button class="btn btn-sm" data-plugin-acc="' + esc(p.id) + '"' + (p.kind === 'unavailable' ? ' disabled' : '') + '>' + esc(verb) + '</button>' +
-      '<span class="oauth-badge ' + p.badgeClass + '">' + esc(p.badge) + '</span>' +
-      '<span class="help-tip" data-tip="' + esc(p.tip) + '">?</span></div>';
+      '<button class="btn btn-sm" data-plugin-svc="' + esc(s.id) + '">' + esc(verb) + '</button>' +
+      '<span class="oauth-badge ' + s.badgeClass + '">' + esc(t(s.badge)) + '</span>' +
+      '<span class="help-tip" data-tip="' + esc(s.tip) + '">?</span></div>';
   }).join('');
-  box.querySelectorAll('[data-plugin-acc]').forEach((b) => b.addEventListener('click', () => pluginAccount(b.dataset.pluginAcc, b)));
+  box.querySelectorAll('[data-plugin-svc]').forEach((b) => b.addEventListener('click', () => openPluginPicker(b.dataset.pluginSvc)));
 }
 
 function pluginStatus(text, cls) {
@@ -1715,8 +1794,8 @@ function pluginStatus(text, cls) {
 async function ensurePlugin(id, label) {
   const list = async () => ((await mgmt('GET', 'plugins')) || {}).plugins || [];
   let cur = (await list()).find((x) => x.id === id);
-  if (cur && cur.registered) return;
-  if (!cur) {
+  if (cur && cur.registered && cur.enabled) return cur;
+  if (!cur || !(cur.path || cur.registered)) {
     if (!confirmDo(t('Встановити плагін «{name}» з магазину плагінів рушія? Це сторонній код із GitHub, він працюватиме всередині CarteLink.', { name: label }))) throw new Error(t('Скасовано'));
     pluginStatus(t('Завантажую плагін {name}…', { name: label }));
     await mgmt('POST', 'plugin-store/' + encodeURIComponent(id) + '/install', {});
@@ -1726,43 +1805,353 @@ async function ensurePlugin(id, label) {
   for (let i = 0; i < 20; i++) {
     await new Promise((r) => setTimeout(r, 1000));
     cur = (await list()).find((x) => x.id === id);
-    if (cur && cur.registered) return;
+    if (cur && cur.registered && cur.enabled) return cur;
   }
   throw new Error(t('Плагін {name} не запустився — подивись app.log', { name: label }));
 }
 
-async function pluginAccount(accId, btn) {
-  const p = PLUGIN_ACCOUNTS.find((x) => x.id === accId);
-  if (!p || p.kind === 'unavailable') return;
-  if (p.kind === 'vertex') { $('vertex-file').click(); return; }
+async function applyPluginSafeConfig(id) {
+  const safe = PLUGIN_SAFE_CONFIG[id];
+  if (!safe) return;
+  const cfg = (await mgmt('GET', 'plugins/' + encodeURIComponent(id) + '/config')) || {};
+  const patch = {};
+  Object.keys(safe).forEach((k) => { if (cfg[k] === undefined) patch[k] = safe[k]; });
+  if (Object.keys(patch).length) await mgmt('PATCH', 'plugins/' + encodeURIComponent(id) + '/config', patch);
+}
+
+function pluginConsoleUrl(id, info) {
+  const menu = info.menus && info.menus[0];
+  return location.origin + (menu ? unhtml(menu.path) : '/v0/resource/plugins/' + id + '/console');
+}
+
+function openPluginConsole(id, label, info) {
+  const url = pluginConsoleUrl(id, info);
+  const st = $('oauth-status');
+  st.innerHTML = '<a href="' + esc(url) + '" target="_blank" style="color:var(--accent-2)">' + esc(t('Відкрити консоль {name} ↗', { name: label })) + '</a> ' +
+    '<span class="hint">' + esc(t('додай там акаунт або ключ — моделі з’являться у списках')) + '</span>';
+  st.className = 'msg ok';
+  window.open(url, '_blank');
+}
+
+async function addPluginApiKey(id, label) {
+  const key = (window.prompt(t('Встав API-ключ {name}:', { name: label })) || '').trim();
+  if (!key) { pluginStatus(''); return; }
+  const cfg = (await mgmt('GET', 'plugins/' + id + '/config')) || {};
+  const keys = Array.isArray(cfg.api_keys) ? cfg.api_keys.filter((k) => k && k.key !== key) : [];
+  keys.push({ key: key, weight: 10 });
+  await mgmt('PATCH', 'plugins/' + id + '/config', { api_keys: keys });
+  pluginStatus(t('Ключ {name} додано ✓ — моделі з’являться у списках за хвилину', { name: label }), 'ok');
+  setTimeout(collectModelOptions, 3000);
+}
+
+// A plugin with no sign-in page of its own: edit the settings it declares.
+async function renderPluginConfigForm(id, label, info) {
+  const box = $('plugin-config-form');
+  const fields = info.config_fields || [];
+  if (!fields.length) {
+    box.innerHTML = '';
+    pluginStatus(t('Плагін {name} готовий. Вхід не потрібен.', { name: label }), 'ok');
+    return;
+  }
+  const cfg = (await mgmt('GET', 'plugins/' + encodeURIComponent(id) + '/config')) || {};
+  const isJson = (f) => f.type === 'array' || f.type === 'object';
+  box.innerHTML = '<div class="tier-group-title">' + esc(t('Налаштування плагіна {name}', { name: label })) + '</div>' +
+    fields.map((f, i) => {
+      const name = unhtml(f.name);
+      const val = cfg[name];
+      let input;
+      if (f.type === 'boolean') {
+        input = '<input type="checkbox" data-i="' + i + '"' + (val ? ' checked' : '') + '>';
+      } else if (f.type === 'enum') {
+        input = '<select data-i="' + i + '"><option value=""></option>' + (f.enum_values || []).map((o) => '<option' + (unhtml(o) === val ? ' selected' : '') + '>' + esc(unhtml(o)) + '</option>').join('') + '</select>';
+      } else if (isJson(f)) {
+        input = '<textarea class="mono" rows="3" data-i="' + i + '">' + esc(val === undefined ? '' : JSON.stringify(val, null, 2)) + '</textarea>';
+      } else {
+        const secret = /key|token|secret|password/i.test(name);
+        input = '<input class="mono" type="' + (secret ? 'password' : 'text') + '" data-i="' + i + '" value="' + esc(val === undefined ? '' : val) + '">';
+      }
+      return '<label class="plug-field"><span class="plug-field-name">' + esc(name) + '</span>' + input + '<span class="hint">' + esc(unhtml(f.description)) + '</span></label>';
+    }).join('') +
+    '<button class="btn btn-sm btn-accent" id="plugin-config-save">' + esc(t('Зберегти')) + '</button>';
+  $('plugin-config-save').addEventListener('click', async () => {
+    const patch = {};
+    try {
+      box.querySelectorAll('[data-i]').forEach((el) => {
+        const f = fields[Number(el.dataset.i)];
+        const name = unhtml(f.name);
+        if (f.type === 'boolean') { patch[name] = el.checked; return; }
+        const raw = el.value.trim();
+        if (!raw) { patch[name] = null; return; }
+        if (isJson(f)) {
+          try { patch[name] = JSON.parse(raw); } catch (e) { throw new Error(t('Невірний JSON у полі {name}', { name: name })); }
+        } else if (f.type === 'number' || f.type === 'integer') {
+          patch[name] = Number(raw);
+        } else {
+          patch[name] = raw;
+        }
+      });
+      await mgmt('PATCH', 'plugins/' + encodeURIComponent(id) + '/config', patch);
+      pluginStatus(t('Плагін {name} налаштовано ✓', { name: label }), 'ok');
+      setTimeout(collectModelOptions, 3000);
+    } catch (e) {
+      pluginStatus(t('Не вдалось: {e}', { e: e.message }), 'err');
+    }
+  });
+}
+
+// Install if needed, then sign in the way this plugin supports.
+async function connectPlugin(svc, id) {
+  const entry = PLUGIN_STORE[id];
+  const label = entry ? entry.name : id;
+  $('plugin-config-form').innerHTML = '';
+  // One active plugin per service: two of them may claim the same provider.
+  for (const other of svc.plugins) {
+    const o = PLUGIN_STORE[other];
+    if (other === id || !o || !o.enabled) continue;
+    if (!confirmDo(t('Для {service} зараз працює плагін «{name}». Вимкнути його й підключатись через вибраний? Акаунти старого плагіна не працюватимуть, поки його не ввімкнути.', { service: svc.label, name: o.name }))) return;
+    await mgmt('PATCH', 'plugins/' + encodeURIComponent(other) + '/enabled', { enabled: false });
+  }
+  const info = await ensurePlugin(id, label);
+  await applyPluginSafeConfig(id);
+  const how = PLUGIN_LOGIN[id];
+  if (how === 'apikey') await addPluginApiKey(id, label);
+  else if (how === 'console') openPluginConsole(id, label, info);
+  else if (info.supports_oauth && info.oauth_provider) await startOauth(unhtml(info.oauth_provider));
+  else if (info.menus && info.menus.length) openPluginConsole(id, label, info);
+  else await renderPluginConfigForm(id, label, info);
+}
+
+function pluginChipHtml(p) {
+  if (pluginNoBuild(p.id)) return '<span class="oauth-badge sub">' + esc(t(PLUGIN_NO_BUILD[p.id] === 'all' ? 'Немає збірки' : 'Немає для Windows')) + '</span>';
+  let html = '';
+  if (p.installed || p.registered) {
+    html += p.enabled ? '<span class="oauth-badge free">' + esc(t('Встановлено')) + '</span>' : '<span class="oauth-badge sub">' + esc(t('Вимкнено')) + '</span>';
+  }
+  if (p.update) html += ' <span class="oauth-badge freemium">' + esc(t('Є оновлення {version}', { version: p.version })) + '</span>';
+  return html;
+}
+
+function pluginMetaHtml(p) {
+  const bits = [];
+  if (p.version) bits.push('v' + esc(p.version.replace(/^v/, '')));
+  if (p.author) bits.push(esc(p.author));
+  if (/^https:\/\//.test(p.repository)) bits.push('<a href="' + esc(p.repository) + '" target="_blank" style="color:var(--accent-2)">GitHub ↗</a>');
+  return bits.join(' · ');
+}
+
+async function openPluginPicker(svcId, preselect) {
+  const svc = pluginServices().find((s) => s.id === svcId);
+  if (!svc) return;
+  if (svc.kind === 'vertex') { $('vertex-file').click(); return; }
+  PLUGIN_PICKER = { svcId: svcId, sel: preselect || '' };
+  const box = $('plugin-picker');
+  box.innerHTML = '<div class="empty">' + esc(t('Завантаження…')) + '</div>';
+  box.classList.remove('hidden');
+  try {
+    await loadPluginStore();
+  } catch (e) {
+    box.innerHTML = '<div class="msg err">' + esc(t('Не вдалось завантажити магазин плагінів: {e}', { e: e.message })) + '</div>';
+    return;
+  }
+  renderPluginPicker();
+  box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+function closePluginPicker() {
+  PLUGIN_PICKER = null;
+  $('plugin-picker').classList.add('hidden');
+  $('plugin-picker').innerHTML = '';
+}
+
+function renderPluginPicker() {
+  if (!PLUGIN_PICKER) return;
+  const box = $('plugin-picker');
+  const svc = pluginServices().find((s) => s.id === PLUGIN_PICKER.svcId);
+  const entries = svc ? svc.plugins.map((id) => PLUGIN_STORE[id]).filter(Boolean) : [];
+  if (!entries.length) {
+    box.innerHTML = '<div class="msg err">' + esc(t('У магазині немає плагіна для {name}', { name: svc ? svc.label : '' })) + '</div>';
+    return;
+  }
+  const usable = entries.filter((p) => !pluginNoBuild(p.id));
+  const active = usable.find((p) => p.enabled);
+  const first = active || usable[0];
+  let sel = PLUGIN_PICKER.sel;
+  if (!usable.some((p) => p.id === sel)) sel = first ? first.id : '';
+  PLUGIN_PICKER.sel = sel;
+  const cur = PLUGIN_STORE[sel];
+  const onDisk = cur && (cur.installed || cur.registered);
+  const go = !cur ? '' : cur.enabled && onDisk ? t('Увійти') : onDisk ? t('Увімкнути й увійти') : t('Встановити й увійти');
+  box.innerHTML =
+    '<div class="plug-picker-head"><b>' + esc(t('Обери плагін для {name}', { name: svc.label })) + '</b>' +
+    '<button class="btn btn-mini btn-ghost right" id="plugin-picker-close">' + ic('x', 'i-sm') + '</button></div>' +
+    '<p class="hint plug-warn">' + esc(t('Плагіни — це сторонній код із GitHub. Він працює всередині CarteLink з повним доступом. Вхід через плагін зазвичай неофіційний і може порушувати умови сервісу, тому для нових сервісів краще брати окремий акаунт.')) + '</p>' +
+    '<div class="plug-choices">' + entries.map((p) => {
+      const off = pluginNoBuild(p.id);
+      return '<label class="radio-label' + (off ? ' plug-off' : '') + '"><input type="radio" name="plugin-choice" value="' + esc(p.id) + '"' + (p.id === sel ? ' checked' : '') + (off ? ' disabled' : '') + '>' +
+        '<div class="radio-content"><div class="radio-title">' + esc(p.name) + ' ' + pluginChipHtml(p) + '</div>' +
+        '<div class="radio-desc">' + esc(p.description) + '</div>' +
+        (PLUGIN_NOTES[p.id] ? '<div class="radio-desc plug-note">' + esc(t(PLUGIN_NOTES[p.id])) + '</div>' : '') +
+        '<div class="hint">' + pluginMetaHtml(p) + '</div></div></label>';
+    }).join('') + '</div>' +
+    '<div class="plug-actions">' +
+    (cur ? '<button class="btn btn-sm btn-accent" id="plugin-go">' + ic('login', 'i-sm') + esc(go) + '</button>' : '') +
+    (onDisk ? '<button class="btn btn-sm btn-danger" id="plugin-remove">' + ic('trash', 'i-sm') + esc(t('Видалити плагін')) + '</button>' : '') +
+    '</div><div id="plugin-config-form" class="plug-config"></div>';
+  $('plugin-picker-close').addEventListener('click', closePluginPicker);
+  box.querySelectorAll('input[name="plugin-choice"]').forEach((r) => r.addEventListener('change', () => {
+    PLUGIN_PICKER.sel = r.value;
+    renderPluginPicker();
+  }));
+  const goBtn = $('plugin-go');
+  if (goBtn) goBtn.addEventListener('click', async () => {
+    goBtn.disabled = true;
+    try {
+      await connectPlugin(svc, sel);
+    } catch (e) {
+      pluginStatus(pluginErrorText(e), 'err');
+    } finally {
+      goBtn.disabled = false;
+    }
+    const formHtml = $('plugin-config-form').innerHTML;
+    await refreshPluginViews();
+    // A settings form the sign-in just opened stays open across the redraw.
+    if (formHtml && PLUGIN_PICKER) await renderPluginConfigForm(sel, PLUGIN_STORE[sel].name, await pluginInfo(sel));
+  });
+  const rmBtn = $('plugin-remove');
+  if (rmBtn) rmBtn.addEventListener('click', () => removePlugin(sel));
+}
+
+async function pluginInfo(id) {
+  return (((await mgmt('GET', 'plugins')) || {}).plugins || []).find((x) => x.id === id) || {};
+}
+
+function pluginErrorText(e) {
+  const m = String(e.message || e);
+  if (/restart/i.test(m)) return t('Плагін зараз завантажений. Перезапусти CarteLink і спробуй ще раз.');
+  return t('Не вдалось: {e}', { e: m });
+}
+
+// The picker and the Plugins page show the same state; redraw both after a change.
+async function refreshPluginViews() {
+  try { await loadPluginStore(true); } catch (e) { /* keep the last list */ }
+  renderPluginButtons();
+  renderPluginPicker();
+  renderPluginList();
+}
+
+async function removePlugin(id) {
+  const name = PLUGIN_STORE[id] ? PLUGIN_STORE[id].name : id;
+  if (!confirmDo(t('Видалити плагін «{name}»? Акаунти, додані через нього, не працюватимуть, поки не встановиш його знову.', { name: name }))) return;
+  try {
+    await mgmt('DELETE', 'plugins/' + encodeURIComponent(id));
+    toast(t('Плагін {name} видалено ✓', { name: name }));
+  } catch (e) {
+    toast(pluginErrorText(e), true);
+  }
+  await refreshPluginViews();
+}
+
+// ---------- Plugins page: the whole store ----------
+async function refreshPlugins(force) {
+  const box = $('plug-list');
+  if (!box) return;
+  if (!PLUGIN_STORE) box.innerHTML = '<div class="empty">' + esc(t('Завантаження…')) + '</div>';
+  try {
+    await loadPluginStore(force);
+  } catch (e) {
+    box.innerHTML = '<div class="msg err">' + esc(t('Не вдалось завантажити магазин плагінів: {e}', { e: e.message })) + '</div>';
+    return;
+  }
+  renderPluginList();
+}
+
+function renderPluginList() {
+  const box = $('plug-list');
+  if (!box || !PLUGIN_STORE) return;
+  const q = ($('plug-search').value || '').trim().toLowerCase();
+  const items = Object.values(PLUGIN_STORE).filter((p) => {
+    const provider = pluginIsProvider(p) || !!pluginServiceOf(p.id);
+    if (PLUG_FILTER === 'services' && !provider) return false;
+    if (PLUG_FILTER === 'tools' && provider) return false;
+    if (PLUG_FILTER === 'installed' && !(p.installed || p.registered)) return false;
+    return !q || (p.id + ' ' + p.name + ' ' + p.description + ' ' + p.tags.join(' ')).toLowerCase().indexOf(q) >= 0;
+  }).sort((a, b) => a.name.localeCompare(b.name));
+  $('plug-count').textContent = String(items.length);
+  if (!items.length) {
+    box.innerHTML = '<div class="empty">' + esc(t('Нічого не знайдено')) + '</div>';
+    return;
+  }
+  box.innerHTML = items.map((p) => {
+    const provider = !!pluginServiceOf(p.id);
+    const onDisk = p.installed || p.registered;
+    const noBuild = pluginNoBuild(p.id);
+    const btns = [];
+    if (provider && !noBuild) btns.push('<button class="btn btn-mini btn-accent" data-plug-connect="' + esc(p.id) + '">' + ic('login', 'i-sm') + esc(t('Підключити')) + '</button>');
+    if (!provider && !onDisk && !noBuild) btns.push('<button class="btn btn-mini btn-accent" data-plug-install="' + esc(p.id) + '">' + ic('download', 'i-sm') + esc(t('Встановити')) + '</button>');
+    if (onDisk) {
+      if (p.update) btns.push('<button class="btn btn-mini" data-plug-update="' + esc(p.id) + '">' + ic('rotate', 'i-sm') + esc(t('Оновити')) + '</button>');
+      if (p.registered && p.enabled) btns.push('<button class="btn btn-mini" data-plug-console="' + esc(p.id) + '">' + ic('external', 'i-sm') + esc(t('Консоль')) + '</button>');
+      btns.push('<button class="btn btn-mini" data-plug-toggle="' + esc(p.id) + '">' + esc(t(p.enabled ? 'Вимкнути' : 'Увімкнути')) + '</button>');
+      btns.push('<button class="btn btn-mini btn-danger" data-plug-remove="' + esc(p.id) + '" title="' + esc(t('Видалити плагін')) + '">' + ic('trash', 'i-sm') + '</button>');
+    }
+    return '<div class="plug-row"><div class="plug-main">' +
+      '<div class="plug-name"><b>' + esc(p.name) + '</b> ' + pluginChipHtml(p) + '</div>' +
+      '<div class="plug-desc">' + esc(p.description) + '</div>' +
+      '<div class="hint">' + pluginMetaHtml(p) + '</div></div>' +
+      '<div class="plug-btns">' + btns.join('') + '</div></div>';
+  }).join('');
+}
+
+async function plugListAction(btn) {
+  const d = btn.dataset;
+  if (d.plugConnect) {
+    const svc = pluginServiceOf(d.plugConnect);
+    showPage('cliproxy');
+    openPluginPicker(svc.id, d.plugConnect);
+    return;
+  }
+  if (d.plugRemove) { removePlugin(d.plugRemove); return; }
+  const id = d.plugInstall || d.plugUpdate || d.plugConsole || d.plugToggle;
+  const p = PLUGIN_STORE[id];
   btn.disabled = true;
   try {
-    await ensurePlugin(p.plugin, p.label);
-    if (p.kind === 'oauth') {
-      await startOauth(p.provider);
-    } else if (p.kind === 'console') {
-      const url = location.origin + '/v0/resource/plugins/' + p.plugin + '/console';
-      const st = $('oauth-status');
-      st.innerHTML = '<a href="' + esc(url) + '" target="_blank" style="color:var(--accent-2)">' + esc(t('Відкрити консоль {name} ↗', { name: p.label })) + '</a> ' +
-        '<span class="hint">' + esc(t('додай там API-ключ і завантаж моделі — вони з’являться у списках')) + '</span>';
-      st.className = 'msg ok';
-      window.open(url, '_blank');
-    } else if (p.kind === 'apikey') {
-      const key = (window.prompt(t('Встав API-ключ {name}:', { name: p.label })) || '').trim();
-      if (!key) { pluginStatus(''); return; }
-      const cfg = (await mgmt('GET', 'plugins/' + p.plugin + '/config')) || {};
-      const keys = Array.isArray(cfg.api_keys) ? cfg.api_keys.filter((k) => k && k.key !== key) : [];
-      keys.push({ key: key, weight: 10 });
-      await mgmt('PATCH', 'plugins/' + p.plugin + '/config', { api_keys: keys });
-      pluginStatus(t('Ключ {name} додано ✓ — моделі з’являться у списках за хвилину', { name: p.label }), 'ok');
-      setTimeout(collectModelOptions, 3000);
+    if (d.plugInstall) {
+      toast(t('Завантажую плагін {name}…', { name: p.name }));
+      await ensurePlugin(id, p.name);
+      await applyPluginSafeConfig(id);
+      toast(t('Плагін {name} встановлено ✓', { name: p.name }));
+    } else if (d.plugUpdate) {
+      toast(t('Завантажую плагін {name}…', { name: p.name }));
+      await mgmt('POST', 'plugin-store/' + encodeURIComponent(id) + '/install', {});
+      toast(t('Плагін {name} встановлено ✓', { name: p.name }));
+    } else if (d.plugConsole) {
+      const info = await pluginInfo(id);
+      if (info.menus && info.menus.length) window.open(pluginConsoleUrl(id, info), '_blank');
+      else toast(t('У плагіна {name} немає своєї консолі', { name: p.name }));
+    } else if (d.plugToggle) {
+      await mgmt('PATCH', 'plugins/' + encodeURIComponent(id) + '/enabled', { enabled: !p.enabled });
+      toast(t(p.enabled ? 'Плагін {name} вимкнено ✓' : 'Плагін {name} увімкнено ✓', { name: p.name }));
+      await new Promise((r) => setTimeout(r, 1500));
     }
   } catch (e) {
-    pluginStatus(t('Не вдалось: {e}', { e: e.message }), 'err');
+    toast(pluginErrorText(e), true);
   } finally {
     btn.disabled = false;
   }
+  if (!d.plugConsole) await refreshPluginViews();
 }
+
+$('plug-list').addEventListener('click', (ev) => {
+  const btn = ev.target.closest('button');
+  if (btn) plugListAction(btn);
+});
+$('plug-search').addEventListener('input', renderPluginList);
+$('plug-refresh').addEventListener('click', () => refreshPlugins(true));
+$('plug-filter').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+  PLUG_FILTER = b.dataset.f;
+  $('plug-filter').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
+  renderPluginList();
+}));
 
 $('vertex-file').addEventListener('change', async () => {
   const f = $('vertex-file').files[0];
@@ -1969,6 +2358,7 @@ async function refreshCliproxy() {
   try { await loadStatus(); } catch (e) { /* keep old */ }
   await renderAuthFiles();
   renderAccountModels();
+  loadPluginStore().then(renderPluginButtons).catch(() => { /* the curated buttons stay */ });
 }
 
 // ---- account models: hide (oauth-excluded-models) / add (oauth-model-alias) ----

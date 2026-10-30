@@ -69,7 +69,7 @@ func (a *App) mgmtRequestType(method, path string, body []byte, ctype string) (i
 		req.Header.Set("Content-Type", ctype)
 	}
 	timeout := mgmtTimeout
-	if strings.Contains(path, "/plugin-store/") {
+	if strings.Contains(path, "/plugin-store") {
 		timeout = 3 * time.Minute
 	}
 	client := &http.Client{Timeout: timeout}
