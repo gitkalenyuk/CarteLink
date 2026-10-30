@@ -26,7 +26,8 @@
 | `internal/desktop/` | Вікно: WebView2 + трей (Windows), WKWebView cgo (`gui_darwin.go`), автозапуск (`autostart_*.go`) |
 | `internal/instance/` | Одна копія: `instance.json` + `/api/app/ping`, `/api/app/show` |
 | `internal/web/ui/` | `index.html`, `app.js`, `style.css`, `presets.js` (70+ провайдерів), `clients.js` (24 програми), `switcher.*` (перемикач), `i18n.js` + `i18n/<lang>.js` (переклади) |
-| `scripts/` | `mac-setup.sh` (перевірка), `build-mac-app.sh` (`.app` + `.dmg`) |
+| `scripts/` | `mac-setup.sh` (перевірка), `build-mac-app.sh` (`.app` + 3 `.dmg`) |
+| `INSTALL-MACOS.md`, `INSTALL-MACOS-AI.md` | Встановлення на Mac: для людей / промпт для ШІ-агента |
 
 ## Сторінки UI
 Дизайн-система — `DESIGN.md` (темна консоль, один кораловий акцент, іконки-спрайт `#i-*` в
@@ -133,7 +134,9 @@ Electron-мотлоху).
    (якщо вже є — `git pull`).
 3. **Перевірка:** `bash scripts/mac-setup.sh` — build, vet, test, `node --check`, бінарник `./cartelink`.
 4. **Реліз:** `bash scripts/build-mac-app.sh` → `dist/CarteLink.app` (universal, WKWebView,
-   ad-hoc підпис) і `dist/CarteLink-<версія>.dmg` — його користувач роздає людям.
+   ad-hoc підпис, macOS 13+) і три `.dmg` для людей: `CarteLink-<версія>.dmg` (universal),
+   `-apple-silicon.dmg`, `-intel.dmg`. Реліз — у приватний `gitkalenyuk/CarteLink`, тег
+   `v<версія>-mac`, разом з `INSTALL-MACOS.md` і `INSTALL-MACOS-AI.md`.
    `gui_darwin.go` (cgo) на Windows не компілюється — перша реальна перевірка саме тут;
    якщо збірка падає, виправляй `internal/desktop/gui_darwin.go`.
 5. **Перевір наживо:** `open dist/CarteLink.app`, потім
