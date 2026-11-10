@@ -24,6 +24,8 @@ func maskKey(k string) string {
 func (a *App) apiStatus(w http.ResponseWriter, r *http.Request) {
 	cfg := a.snapshotConfig()
 	running := a.EngineRunning()
+	// The address that answers now; a saved host/port applies after a restart.
+	boundHost, boundPort := a.engineAddr()
 	resp := anyMap{
 		"version": config.Version,
 		"engine": anyMap{
@@ -31,9 +33,9 @@ func (a *App) apiStatus(w http.ResponseWriter, r *http.Request) {
 			"paused":     a.Paused(),
 			"restarting": a.Restarting(),
 			"lastError":  a.LastError(),
-			"port":       a.EffectivePort(),
+			"port":       boundPort,
 			"configPort": cfg.Cliproxy.Port,
-			"host":       cfg.Cliproxy.Host,
+			"host":       boundHost,
 			"version":    cliproxy.UpstreamVersion,
 		},
 		"requireKey": cfg.RequireKey,
@@ -46,7 +48,9 @@ func (a *App) apiStatus(w http.ResponseWriter, r *http.Request) {
 // apiEndpoints returns the absolute URLs the UI shows for copy-paste.
 func (a *App) apiEndpoints(w http.ResponseWriter, r *http.Request) {
 	cfg := a.snapshotConfig()
-	base := "http://" + config.DisplayHost(cfg.Cliproxy.Host) + ":" + itoa(a.EffectivePort())
+	// The address that answers right now (a saved port applies after a restart).
+	bh, bp := a.engineAddr()
+	base := "http://" + config.DisplayHost(bh) + ":" + itoa(bp)
 	key := cfg.APIKey
 	if len(cfg.Cliproxy.APIKeys) > 0 {
 		key = cfg.Cliproxy.APIKeys[0]

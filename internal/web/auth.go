@@ -132,6 +132,11 @@ func (a *App) VerifyAuthLive() bool {
 	switch {
 	case res.OK && (res.Tier == "" || res.Tier == "private"):
 		a.authMu.Lock()
+		if a.authSession != session {
+			// Logged out (or in as someone else) while the broker was answering.
+			a.authMu.Unlock()
+			return false
+		}
 		a.authStatus, a.authReason = "authorized", ""
 		a.authUser = mergeUser(a.authUser, res.User)
 		user := a.authUser

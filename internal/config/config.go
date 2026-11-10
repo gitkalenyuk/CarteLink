@@ -16,7 +16,7 @@ import (
 )
 
 // Version is the app version reported in /health and the UI.
-const Version = "2.6.0"
+const Version = "2.7.0"
 
 // AppName is the product name used in window titles, logs and messages.
 const AppName = "CarteLink"
@@ -71,8 +71,48 @@ type AuthConfig struct {
 type Desktop struct {
 	CloseToTray bool `json:"closeToTray"`
 	// Lang is the UI language code ("uk", "en", …); empty = Ukrainian.
-	Lang     string   `json:"lang,omitempty"`
+	Lang string `json:"lang,omitempty"`
+	// Theme is the UI design: "" (console, the default), "glass" or "terminal".
+	Theme    string   `json:"theme,omitempty"`
 	Switcher Switcher `json:"switcher"`
+}
+
+// legacyProviderTags are the "provider:" prefixes old UI versions put in front
+// of a model id.
+var legacyProviderTags = map[string]bool{
+	"account": true, "provider": true, "compat": true, "openai": true, "anthropic": true,
+	"claude": true, "codex": true, "gemini": true, "antigravity": true, "vertex": true,
+}
+
+// StripProviderPrefix drops a legacy "provider:" prefix from a model id. Only
+// a known provider tag is a prefix: real ids contain colons too ("qwen3:32b",
+// "deepseek/deepseek-chat-v3.1:free") and must stay whole.
+func StripProviderPrefix(cfg *Config, model string) string {
+	i := strings.Index(model, ":")
+	if i <= 0 || i == len(model)-1 || strings.Contains(model, "://") {
+		return model
+	}
+	prefix := strings.ToLower(strings.TrimSpace(model[:i]))
+	if legacyProviderTags[prefix] {
+		return model[i+1:]
+	}
+	if cfg != nil {
+		for _, p := range cfg.Providers {
+			if id := strings.ToLower(strings.TrimSpace(p.ID)); id != "" && id == prefix {
+				return model[i+1:]
+			}
+		}
+	}
+	return model
+}
+
+// ValidTheme reports whether name is a UI design the app ships ("" = default).
+func ValidTheme(name string) bool {
+	switch name {
+	case "", "console", "glass", "terminal":
+		return true
+	}
+	return false
 }
 
 // Switcher is the always-on-top model switcher window: two preset models and
@@ -373,10 +413,15 @@ var ErrCorrupt = errors.New("config.json is corrupt")
 
 // Load reads the config, falling back to defaults for a missing file. A
 // corrupt file is backed up (never silently overwritten) and reported via
-// ErrCorrupt; the returned config is still usable.
+// ErrCorrupt; the returned config is still usable. A file that exists but
+// cannot be read (locked by another program) is an error: starting with
+// defaults would overwrite the real settings on the next save.
 func Load() (*Config, error) {
 	cfg := Defaults()
 	raw, err := os.ReadFile(ConfigPath())
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("read config.json: %w", err)
+	}
 	if err == nil && len(strings.TrimSpace(string(raw))) > 0 {
 		if jsonErr := json.Unmarshal(raw, cfg); jsonErr != nil {
 			backup := ConfigPath() + ".corrupt-" + time.Now().Format("20060102-150405")
@@ -556,6 +601,9 @@ func Normalize(c *Config) {
 	c.Desktop.Switcher.Model1 = strings.TrimSpace(c.Desktop.Switcher.Model1)
 	c.Desktop.Switcher.Model2 = strings.TrimSpace(c.Desktop.Switcher.Model2)
 	c.Desktop.Lang = strings.TrimSpace(c.Desktop.Lang)
+	if !ValidTheme(c.Desktop.Theme) {
+		c.Desktop.Theme = ""
+	}
 	normPrompting(&c.Prompting)
 	if c.Schema < schemaVersion {
 		// <= 2.2.0 silently saved an auto-moved port (8318...8417) when 8317

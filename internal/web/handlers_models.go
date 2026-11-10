@@ -12,13 +12,10 @@ import (
 	"cartelgate/internal/config"
 )
 
-// cleanModel drops a "provider:" prefix (UI convention) and spaces.
+// cleanModel drops spaces and a legacy "provider:" prefix. Colons inside the
+// id itself ("qwen3:32b") are kept.
 func cleanModel(m string) string {
-	m = strings.TrimSpace(m)
-	if i := strings.Index(m, ":"); i > 0 && !strings.Contains(m, "://") {
-		m = m[i+1:]
-	}
-	return m
+	return config.StripProviderPrefix(nil, strings.TrimSpace(m))
 }
 
 func decodeBody(r *http.Request, v any) error {

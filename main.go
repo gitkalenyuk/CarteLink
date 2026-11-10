@@ -286,6 +286,7 @@ func main() {
 	// Give the UI's Start/Stop/Restart buttons what they need to (re)run the
 	// engine: the same root context and config path this first Start uses.
 	app.SetLifecycle(ctx, cancel, cfgPath)
+	app.MarkBound(host, port)
 	if err := emb.Start(ctx, cfgPath); err != nil {
 		fail(useGUI, "server start", err)
 	}
@@ -530,16 +531,38 @@ func uncloakClaudeDDModel(id string) string {
 	return string(runes) + suffix
 }
 
+// rejoinBody puts the bytes already read back in front of the rest of a body.
+func rejoinBody(read []byte, rest io.ReadCloser) io.ReadCloser {
+	return struct {
+		io.Reader
+		io.Closer
+	}{io.MultiReader(bytes.NewReader(read), rest), rest}
+}
+
 // rewriteModel applies the model mapping (see resolveModel) to a chat request
 // body.
 // It also resolves cloaked model IDs (claude-fable-5-dd-*) and cleans fake
 // identity prompts injected by Claude Code so models report their true identity.
 func rewriteModel(c *gin.Context, app *web.App) {
-	body, err := io.ReadAll(io.LimitReader(c.Request.Body, 32<<20))
+	const maxRewrite = 32 << 20
+	orig := c.Request.Body
+	body, err := io.ReadAll(io.LimitReader(orig, maxRewrite+1))
 	if err != nil {
-		return // let the engine handler produce its own read error
+		// Hand back what was read, so the engine reports the real read error.
+		c.Request.Body = rejoinBody(body, orig)
+		return
 	}
-	_ = c.Request.Body.Close()
+	if len(body) > maxRewrite {
+		// Too large to rewrite in memory: a key limited to its own models cannot
+		// be checked, everything else goes to the engine whole and unchanged.
+		if scopedKeyFromContext(c) != nil {
+			scopedReject(c, app, http.StatusRequestEntityTooLarge, "invalid_request", "", "request body is too large")
+			return
+		}
+		c.Request.Body = rejoinBody(body, orig)
+		return
+	}
+	_ = orig.Close()
 
 	scoped := scopedKeyFromContext(c)
 	var payload map[string]any
@@ -722,9 +745,11 @@ func isBlacklisted(cfg *config.Config, model string) bool {
 	if cfg == nil || model == "" {
 		return false
 	}
-	m := strings.ToLower(strings.TrimSpace(model))
+	// "model(high)" and "model[1m]" are the same model for the engine.
+	m := strings.ToLower(web.BaseModelName(model))
+	full := strings.ToLower(strings.TrimSpace(model))
 	for _, b := range cfg.ModelBlacklist {
-		if strings.ToLower(strings.TrimSpace(b)) == m {
+		if lb := strings.ToLower(strings.TrimSpace(b)); lb != "" && (lb == m || lb == full) {
 			return true
 		}
 	}

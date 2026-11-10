@@ -36,6 +36,7 @@ func (a *App) apiAppSettingsGet(w http.ResponseWriter, r *http.Request) {
 		"closeToTray":   cfg.Desktop.CloseToTray,
 		"trayAvailable": desktop.TraySupported(),
 		"lang":          cfg.Desktop.Lang,
+		"theme":         cfg.Desktop.Theme,
 		"switcher":      cfg.Desktop.Switcher.Enabled,
 		// The floating switcher needs the desktop window (Windows build).
 		"switcherAvailable": a.switcherAvailable(),
@@ -49,9 +50,14 @@ func (a *App) apiAppSettingsPut(w http.ResponseWriter, r *http.Request) {
 		CloseToTray *bool   `json:"closeToTray"`
 		Lang        *string `json:"lang"`
 		Switcher    *bool   `json:"switcher"`
+		Theme       *string `json:"theme"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req); err != nil {
 		jsonWrite(w, http.StatusBadRequest, anyMap{"ok": false, "error": "invalid body"})
+		return
+	}
+	if req.Theme != nil && !config.ValidTheme(*req.Theme) {
+		jsonWrite(w, http.StatusBadRequest, anyMap{"ok": false, "error": "unknown theme"})
 		return
 	}
 	if req.Autostart != nil {
@@ -60,13 +66,16 @@ func (a *App) apiAppSettingsPut(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if req.CloseToTray != nil || req.Lang != nil || req.Switcher != nil {
+	if req.CloseToTray != nil || req.Lang != nil || req.Switcher != nil || req.Theme != nil {
 		_, err := a.UpdateConfig(func(c *config.Config) error {
 			if req.CloseToTray != nil {
 				c.Desktop.CloseToTray = *req.CloseToTray
 			}
 			if req.Lang != nil {
 				c.Desktop.Lang = *req.Lang
+			}
+			if req.Theme != nil {
+				c.Desktop.Theme = *req.Theme
 			}
 			if req.Switcher != nil {
 				c.Desktop.Switcher.Enabled = *req.Switcher

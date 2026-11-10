@@ -9,6 +9,7 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log"
 	"net"
@@ -65,8 +66,12 @@ type App struct {
 	metricsStore  *MetricsStore
 	// sessionPort overrides the configured port for this run only.
 	sessionPort int
-	showFn      func()
-	restartFn   func()
+	// boundHost/boundPort: where the engine listens right now. A saved host or
+	// port only becomes this after a restart.
+	boundHost string
+	boundPort int
+	showFn    func()
+	restartFn func()
 	// switcherFn shows (true) or hides (false) the floating model switcher
 	// window; nil where there is no desktop window.
 	switcherFn  func(show bool)
@@ -149,6 +154,18 @@ func (a *App) EngineRestart() error {
 	if !a.restarting.CompareAndSwap(false, true) {
 		return errors.New("restart already in progress")
 	}
+	// Moving to another address: make sure it is free before the working engine
+	// is stopped (a failed bind after the stop would leave nothing running).
+	targetHost, targetPort := a.snapshotConfig().Cliproxy.Host, a.EffectivePort()
+	if curHost, curPort := a.engineAddr(); curHost != targetHost || curPort != targetPort {
+		l, err := net.Listen("tcp", net.JoinHostPort(strings.Trim(targetHost, "[]"), itoa(targetPort)))
+		if err != nil {
+			a.restarting.Store(false)
+			a.setLastError("restart failed: " + err.Error())
+			return fmt.Errorf("адреса %s зайнята або недоступна: %w", net.JoinHostPort(targetHost, itoa(targetPort)), err)
+		}
+		_ = l.Close()
+	}
 	go func() {
 		defer a.restarting.Store(false)
 		time.Sleep(400 * time.Millisecond)
@@ -159,6 +176,7 @@ func (a *App) EngineRestart() error {
 			a.setLastError("restart failed: " + err.Error())
 			return
 		}
+		a.MarkBound(targetHost, targetPort)
 		a.setLastError("")
 		a.mu.Lock()
 		f := a.restartFn
@@ -339,7 +357,36 @@ func (a *App) SetSessionPort(p int) {
 	a.mu.Unlock()
 }
 
-// EffectivePort is the port the engine listens on right now.
+// MarkBound records the address the engine has just started listening on.
+func (a *App) MarkBound(host string, port int) {
+	a.mu.Lock()
+	a.boundHost, a.boundPort = host, port
+	a.mu.Unlock()
+}
+
+// engineAddr is where the engine listens right now. Before the first start
+// (and in tests) that is the configured address.
+func (a *App) engineAddr() (host string, port int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.boundPort > 0 {
+		return a.boundHost, a.boundPort
+	}
+	if a.sessionPort > 0 {
+		return a.cfg.Cliproxy.Host, a.sessionPort
+	}
+	return a.cfg.Cliproxy.Host, a.cfg.Cliproxy.Port
+}
+
+// selfBaseURL is the URL this process reaches its own engine at.
+func (a *App) selfBaseURL() string {
+	host, port := a.engineAddr()
+	return engineBaseURL(host, port)
+}
+
+// EffectivePort is the port the engine is configured to listen on: the saved
+// one, or this run's temporary one. After a port change it is the new port
+// even before the restart; engineAddr is what answers right now.
 func (a *App) EffectivePort() int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -424,7 +471,7 @@ func (a *App) refreshModelCatalog() {
 		return
 	}
 	cfg := a.snapshotConfig()
-	req, err := http.NewRequest(http.MethodGet, engineBaseURL(cfg.Cliproxy.Host, a.EffectivePort())+"/v1/models", nil)
+	req, err := http.NewRequest(http.MethodGet, a.selfBaseURL()+"/v1/models", nil)
 	if err != nil {
 		return
 	}
@@ -482,7 +529,8 @@ func (a *App) EngineModels() []string {
 // IsKnownModel reports whether the engine (or an enabled provider) serves
 // model. With no catalog yet it answers true, so nothing is rerouted blindly.
 func (a *App) IsKnownModel(model string) bool {
-	m := strings.ToLower(strings.TrimSpace(model))
+	// "model(high)" is the same model with a thinking level.
+	m := strings.ToLower(BaseModelName(model))
 	a.mu.Lock()
 	set, cfg := a.knownModels, a.cfg
 	a.mu.Unlock()

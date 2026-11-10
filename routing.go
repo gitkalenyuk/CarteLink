@@ -1,19 +1,16 @@
 package main
 
 import (
-	"path"
+	"sort"
 	"strings"
 
 	"cartelgate/internal/config"
 )
 
-// stripProvider drops a "provider:" prefix (UI convention) — the engine routes
-// by bare model name.
-func stripProvider(s string) string {
-	if i := strings.Index(s, ":"); i >= 0 && !strings.Contains(s, "://") {
-		return s[i+1:]
-	}
-	return s
+// stripProvider drops a legacy "provider:" prefix — the engine routes by bare
+// model name. Colons that belong to the id itself ("qwen3:32b") are kept.
+func stripProvider(cfg *config.Config, s string) string {
+	return config.StripProviderPrefix(cfg, s)
 }
 
 // resolveModelName maps a client-requested model name through the routing
@@ -42,7 +39,7 @@ func resolveModel(cfg *config.Config, want string, known func(string) bool) stri
 	lw := strings.ToLower(strings.TrimSpace(uncloaked))
 
 	if m, ok := lookupMap(r.ModelMap, want, uncloaked); ok {
-		return stripProvider(m)
+		return stripProvider(cfg, m)
 	}
 
 	if r.Mode != "table" {
@@ -50,11 +47,11 @@ func resolveModel(cfg *config.Config, want string, known func(string) bool) stri
 			if mapped, ok := r.ModelMap[m]; ok && mapped != "" {
 				m = mapped
 			}
-			return stripProvider(m)
+			return stripProvider(cfg, m)
 		}
 	}
 
-	def := stripProvider(strings.TrimSpace(r.DefaultModel))
+	def := stripProvider(cfg, strings.TrimSpace(r.DefaultModel))
 	if lw == "" || lw == "*" {
 		if def != "" {
 			return def
@@ -84,24 +81,60 @@ func lookupMap(mm map[string]string, names ...string) (string, bool) {
 			return v, true
 		}
 	}
+	// Map order is random, so the keys are walked sorted: an exact name beats any
+	// wildcard, and of two wildcards the longer (more specific) one wins.
+	keys := make([]string, 0, len(mm))
+	for k, v := range mm {
+		if v != "" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if len(keys[i]) != len(keys[j]) {
+			return len(keys[i]) > len(keys[j])
+		}
+		return keys[i] < keys[j]
+	})
 	for _, n := range names {
 		ln := strings.ToLower(n)
-		for k, v := range mm {
-			if v == "" {
-				continue
+		for _, k := range keys {
+			if strings.ToLower(k) == ln {
+				return mm[k], true
 			}
-			lk := strings.ToLower(k)
-			if lk == ln {
-				return v, true
-			}
-			if strings.ContainsAny(lk, "*?[") {
-				if ok, _ := path.Match(lk, ln); ok {
-					return v, true
-				}
+		}
+	}
+	for _, n := range names {
+		ln := strings.ToLower(n)
+		for _, k := range keys {
+			if wildcardMatch(strings.ToLower(k), ln) {
+				return mm[k], true
 			}
 		}
 	}
 	return "", false
+}
+
+// wildcardMatch matches name against a pattern whose "*" stands for any run of
+// characters, "/" included ("openrouter/*" covers "openrouter/meta/llama").
+// A pattern without "*" never matches here: exact names are handled above.
+func wildcardMatch(pattern, name string) bool {
+	if !strings.Contains(pattern, "*") {
+		return false
+	}
+	parts := strings.Split(pattern, "*")
+	if !strings.HasPrefix(name, parts[0]) {
+		return false
+	}
+	name = name[len(parts[0]):]
+	last := parts[len(parts)-1]
+	for _, mid := range parts[1 : len(parts)-1] {
+		i := strings.Index(name, mid)
+		if i < 0 {
+			return false
+		}
+		name = name[i+len(mid):]
+	}
+	return strings.HasSuffix(name, last)
 }
 
 // tierTarget returns the configured tier model for a (lower-cased) client

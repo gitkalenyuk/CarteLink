@@ -188,6 +188,25 @@ round-capped 1.75 strokes on a 24px grid.
   coral sweep bar runs; on access the gate blurs out and the shell assembles
   (sidebar slides in, nav items and panels rise with 30–40ms stagger).
 
+## Limits
+
+Account limits sit right under the "answering now" row: one card per account that reports
+percentages (two 76px rings, 5 hours and week, with the reset countdown) and one card per
+provider for accounts that only report a state (a segmented bar, one segment per account).
+A ring is neutral below 80%, amber from 80%, red at 100%. A blocked account's card has a
+red hairline that breathes (opacity only). Rings glide from their previous value.
+
+## Designs (themes)
+
+Three designs share one layout and differ only in tokens (`data-theme` on `<html>`):
+- **Console** (default): everything above.
+- **Glass**: blue-black ground with a slow drifting light (one fixed layer moved by
+  `transform`, no live blur), 18px panels with a soft top highlight, periwinkle accent `#9aa5ff`.
+- **Terminal**: mono type everywhere, 2–4px corners, a static dot grid, cyan accent `#4fd8eb`,
+  a blinking caret after page titles.
+The rules below describe Console; a design may change accent, radii and type, never the
+meaning of status colours.
+
 ## Do's and Don'ts
 
 - Do lead every panel title with its icon; do keep copy plain and action-named.

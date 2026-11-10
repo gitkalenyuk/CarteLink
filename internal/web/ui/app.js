@@ -309,11 +309,13 @@ function isModelBlacklisted(id) {
   return MODEL_BLACKLIST.some((b) => b && low === b);
 }
 
+// Only a legacy "provider:" tag is a prefix; ids like "qwen3:32b" stay whole.
+const LEGACY_PROVIDER_TAGS = ['account', 'provider', 'compat', 'openai', 'anthropic', 'claude', 'codex', 'gemini', 'antigravity', 'vertex'];
 function cleanModelName(s) {
   if (!s) return '';
   s = String(s);
   const i = s.indexOf(':');
-  if (i > 0 && s.indexOf('://') < 0) return s.slice(i + 1);
+  if (i > 0 && i < s.length - 1 && s.indexOf('://') < 0 && LEGACY_PROVIDER_TAGS.indexOf(s.slice(0, i).toLowerCase().trim()) >= 0) return s.slice(i + 1);
   return s;
 }
 
@@ -455,7 +457,6 @@ async function refreshHome() {
     $('apiKey').value = st.requireKey ? (ep.key || '') : 'будь-який (перевірку ключа вимкнено)';
   } catch (e) { /* keep */ }
 
-  if (!$('homeAcctList').children.length) $('homeAcctList').innerHTML = skeletonRows(3);
   if (!$('homeErrList').children.length) $('homeErrList').innerHTML = skeletonRows(3);
   await collectModelOptions();
   const routing = st.routing || {};
@@ -464,7 +465,7 @@ async function refreshHome() {
   populateModelSelect($('wizModel'), main, '— обери модель —');
   populateModelSelect($('homeQuickModel'), main, '— обери модель —');
   renderHomePresets();
-  renderHomeAccounts();
+  refreshHomeLimits();
   refreshHomeErrors();
 
   const okAccounts = AUTH_FILES.filter((f) => accountOk(f)).length;
@@ -563,31 +564,226 @@ async function renderHomePresets() {
   });
 }
 
+// What the engine really reports for an account (auth-files): status,
+// unavailable, next_retry_after, status_message.
+function accountBlocked(f) {
+  return f.unavailable === true || f.status === 'error' || f.status === 'unavailable';
+}
+function accountLimited(f) {
+  if (f.next_retry_after && Date.parse(f.next_retry_after) > Date.now()) return true;
+  return /quota|rate.?limit|usage.?limit|429|too many requests|exhausted/i.test(String(f.status_message || ''));
+}
 function accountState(f) {
   if (f.disabled) return ['вимкнено', ''];
-  if (f.cooldowns && f.cooldowns.length) return ['ліміт', 'warn'];
-  if (f.status === 'error' || f.status === 'unavailable') return ['помилка', 'err'];
+  if (accountBlocked(f)) return accountLimited(f) ? ['ліміт', 'warn'] : ['помилка', 'err'];
   return accountOk(f) ? ['активний', 'ok'] : [f.status || '—', ''];
 }
 
-function renderHomeAccounts() {
-  const box = $('homeAcctList');
-  if (!AUTH_FILES.length) {
-    box.innerHTML = '<div class="empty small">' + ic('users', 'i-lg') + '<div>Акаунтів ще немає</div>' +
-      '<button class="btn btn-sm" data-goto="cliproxy">' + ic('plus', 'i-sm') + 'Підключити акаунт</button></div>';
-    return;
-  }
-  const rank = (f) => { const c = accountState(f)[1]; return c === 'err' ? 0 : c === 'warn' ? 1 : c === 'ok' ? 3 : 2; };
-  const list = AUTH_FILES.slice().sort((a, b) => rank(a) - rank(b));
-  const rows = list.slice(0, 6).map((f) => {
-    const prov = String(f.provider || f.type || '?');
-    const [label, cls] = accountState(f);
-    return '<div class="list-row"><span class="prov-ic">' + esc(prov.slice(0, 2)) + '</span>' +
-      '<span class="grow">' + esc(f.email || f.account || f.label || f.name || '') + '<div class="sub">' + esc(provTitle(prov)) + '</div></span>' +
-      '<span class="chip ' + cls + '">' + esc(t(label)) + '</span></div>';
-  }).join('');
-  box.innerHTML = rows + (list.length > 6 ? '<div class="list-row sub">' + esc(t('+ще {n}', { n: list.length - 6 })) + '</div>' : '');
+// ---------- limits (GET /api/limits: one shape for every account type) ----------
+let LIMITS = null;
+let LIMITS_AT = 0;
+let limitsBusy = null;
+const RING_C = 169.65; // circumference of the r=27 ring
+const ringPrev = {};   // ring id -> last drawn offset, so rings glide instead of redrawing
+const LIM_STATE = {
+  ok: ['активний', 'ok'], warn: ['близько до ліміту', 'warn'], limited: ['ліміт', 'err'],
+  error: ['помилка', 'err'], disabled: ['вимкнено', ''],
+};
+
+async function loadLimits(force) {
+  if (!force && LIMITS && Date.now() - LIMITS_AT < 8000) return LIMITS;
+  if (limitsBusy) return limitsBusy;
+  limitsBusy = api('/limits' + (force ? '?refresh=1' : '')).then((r) => {
+    LIMITS = r || { accounts: [], summary: {} };
+    LIMITS_AT = Date.now();
+    return LIMITS;
+  }).finally(() => { limitsBusy = null; });
+  return limitsBusy;
 }
+
+function fmtLeft(ms) {
+  const m = Math.max(0, Math.round(ms / 60000));
+  if (m < 1) return t('менше хвилини');
+  if (m < 60) return t('{m} хв', { m: m });
+  const h = Math.floor(m / 60);
+  if (h < 24) return t('{h} год {m} хв', { h: h, m: m % 60 });
+  return t('{d} д {h} год', { d: Math.floor(h / 24), h: h % 24 });
+}
+
+function limLevel(p) { return p >= 100 ? 'bad' : (p >= 80 ? 'warn' : 'ok'); }
+function limWindowName(w) {
+  if (w.key === '5h') return t('5 годин');
+  if (w.key === 'week') return t('Тиждень');
+  return w.label || t('Ліміт');
+}
+function limResetText(w) {
+  if (w.rolled) return t('вікно оновилось');
+  if (w.resetAt) return t('скидання через {x}', { x: fmtLeft(w.resetAt - Date.now()) });
+  return '';
+}
+function limPct(p) { return (p >= 10 || p === 0 ? Math.round(p) : Math.round(p * 10) / 10) + '%'; }
+
+function limRing(id, w) {
+  const off = RING_C * (1 - Math.min(100, w.usedPercent) / 100);
+  const reset = limResetText(w);
+  return '<div class="lim-ring ' + limLevel(w.usedPercent) + '">' +
+    '<div class="ring-box"><svg viewBox="0 0 64 64" aria-hidden="true"><circle class="ring-bg" cx="32" cy="32" r="27"/>' +
+    '<circle class="ring-fg" cx="32" cy="32" r="27" stroke-dasharray="' + RING_C + '" data-ring="' + esc(id) + '" data-off="' + off.toFixed(2) + '"/></svg>' +
+    '<span class="ring-val">' + limPct(w.usedPercent) + '</span></div>' +
+    '<div class="ring-cap"><b>' + esc(limWindowName(w)) + '</b><span>' + esc(reset || t('використано')) + '</span></div></div>';
+}
+
+function limBar(w) {
+  const reset = limResetText(w);
+  return '<div class="lim-barrow ' + limLevel(w.usedPercent) + '"><div class="lim-barhead"><span>' + esc(limWindowName(w)) + '</span><b>' + limPct(w.usedPercent) + '</b></div>' +
+    '<div class="lim-bar"><i style="transform:scaleX(' + (Math.min(100, w.usedPercent) / 100).toFixed(3) + ')"></i></div>' +
+    (reset ? '<div class="lim-barsub">' + esc(reset) + '</div>' : '') + '</div>';
+}
+
+function limChip(a) {
+  const st = LIM_STATE[a.state] || [a.state, ''];
+  return '<span class="chip ' + st[1] + '">' + esc(t(st[0])) + '</span>';
+}
+
+function limPauseText(a) {
+  if (a.retryAt && a.retryAt > Date.now()) return t('на паузі ще {x}', { x: fmtLeft(a.retryAt - Date.now()) });
+  return '';
+}
+
+function limResetBtn(a) {
+  if (!a.authIndex || (a.state !== 'limited' && a.state !== 'error')) return '';
+  return '<button class="btn btn-mini" data-lim-reset="' + esc(a.authIndex) + '" data-name="' + esc(a.label) + '" title="Зняти блокування після ліміту (429)">' + ic('zap', 'i-sm') + esc(t('Скинути ліміт')) + '</button>';
+}
+
+function limMetric(m) {
+  let v = Math.round(m.value * 100) / 100;
+  v = m.currency ? v + ' ' + m.currency : v + (m.unit ? ' ' + m.unit : '');
+  return '<span class="lim-metric"><span>' + esc(m.label) + '</span><b>' + esc(v) + '</b></span>';
+}
+
+// One card per account that reports percentages.
+function limAccountCard(a, i) {
+  const rings = a.windows.filter((w) => w.key !== 'other').slice(0, 2);
+  const rest = a.windows.filter((w) => rings.indexOf(w) < 0).slice(0, 3);
+  const pause = limPauseText(a);
+  const foot = [];
+  if (pause) foot.push('<span class="lim-pause">' + ic('clock', 'i-sm') + esc(pause) + '</span>');
+  else if (a.observedAt) foot.push('<span title="' + esc(t('Провайдер повідомляє ліміти лише у відповідь на запит')) + '">' + ic('clock', 'i-sm') + esc(t('дані: {x}', { x: relTime(a.observedAt) })) + '</span>');
+  foot.push('<span class="lim-reqs">' + esc(t('{ok} успішних / {bad} помилок', { ok: a.success || 0, bad: a.failed || 0 })) + '</span>');
+  return '<div class="card lim-card s-' + esc(a.state) + '" style="--i:' + i + '">' +
+    '<div class="lim-top"><span class="prov-ic">' + esc(a.provider.slice(0, 2)) + '</span>' +
+    '<div class="lim-id"><b title="' + esc(a.label) + '">' + esc(a.label) + '</b><span>' + esc(provTitle(a.provider)) + (a.plan ? ' · ' + esc(a.plan) : '') + '</span></div>' + limChip(a) + '</div>' +
+    (rings.length ? '<div class="lim-rings">' + rings.map((w) => limRing(a.id + ':' + w.key, w)).join('') + '</div>' : '') +
+    (rest.length ? '<div class="lim-bars">' + rest.map(limBar).join('') + '</div>' : '') +
+    (a.metrics && a.metrics.length ? '<div class="lim-metrics">' + a.metrics.slice(0, 4).map(limMetric).join('') + '</div>' : '') +
+    (a.message && (a.state === 'limited' || a.state === 'error') ? '<div class="lim-msg" title="' + esc(a.message) + '">' + esc(a.message) + '</div>' : '') +
+    '<div class="lim-foot">' + foot.join('') + limResetBtn(a) + '</div></div>';
+}
+
+// Accounts whose provider reports no percentages share one card per provider.
+function limGroupCard(prov, list, i) {
+  const bad = list.filter((a) => a.state === 'limited' || a.state === 'error').length;
+  const off = list.filter((a) => a.state === 'disabled').length;
+  const okN = list.length - bad - off;
+  const worst = bad === list.length - off && bad ? 'limited' : (bad ? 'warn' : 'ok');
+  const rank = { error: 0, limited: 1, warn: 2, ok: 3, disabled: 4 };
+  const rows = list.slice().sort((x, y) => rank[x.state] - rank[y.state]);
+  const shown = rows.slice(0, 5).map((a) => {
+    const pause = limPauseText(a);
+    return '<div class="lim-row"><span class="lim-dot ' + esc(a.state) + '"></span><span class="grow" title="' + esc(a.label) + '">' + esc(a.label) +
+      (pause || (a.message && a.state !== 'ok') ? '<span class="sub" title="' + esc(a.message || '') + '">' + esc(pause || a.message) + '</span>' : '') + '</span>' +
+      (a.pending ? '<span class="sub">' + esc(t('перевіряю…')) + '</span>' : '') + (limResetBtn(a) || limChip(a)) + '</div>';
+  }).join('');
+  return '<div class="card lim-card lim-group s-' + worst + '" style="--i:' + i + '">' +
+    '<div class="lim-top"><span class="prov-ic">' + esc(prov.slice(0, 2)) + '</span>' +
+    '<div class="lim-id"><b>' + esc(provTitle(prov)) + '</b><span>' + esc(t('{n} акаунт(ів)', { n: list.length })) + '</span></div>' +
+    '<div class="lim-count"><b>' + okN + '</b><span>/ ' + list.length + '</span></div></div>' +
+    '<div class="lim-seg" title="' + esc(t('{ok} працюють, {bad} на ліміті або з помилкою', { ok: okN, bad: bad })) + '">' +
+    rows.map((a) => '<i class="' + esc(a.state) + '"></i>').join('') + '</div>' +
+    '<div class="lim-rows">' + shown + (rows.length > 5 ? '<div class="lim-row sub">' + esc(t('+ще {n}', { n: rows.length - 5 })) + '</div>' : '') + '</div>' +
+    '<div class="lim-foot"><span>' + esc(t('Цей провайдер не повідомляє відсотки — видно лише, чи акаунт працює.')) + '</span></div></div>';
+}
+
+function limSummaryHTML(s) {
+  s = s || {};
+  const parts = [];
+  if (s.ok) parts.push('<span class="chip ok">' + esc(t('{n} активні', { n: s.ok })) + '</span>');
+  if (s.warn) parts.push('<span class="chip warn">' + esc(t('{n} близько до ліміту', { n: s.warn })) + '</span>');
+  if (s.limited) parts.push('<span class="chip err">' + esc(t('{n} на ліміті', { n: s.limited })) + '</span>');
+  if (s.error) parts.push('<span class="chip err">' + esc(t('{n} з помилкою', { n: s.error })) + '</span>');
+  if (s.disabled) parts.push('<span class="chip">' + esc(t('{n} вимкнено', { n: s.disabled })) + '</span>');
+  return parts.join('');
+}
+
+// Rings glide from where they stood (first paint: from empty).
+function paintRings(root) {
+  const rings = root.querySelectorAll('[data-ring]');
+  rings.forEach((c) => {
+    const prev = ringPrev[c.dataset.ring];
+    c.style.strokeDashoffset = String(prev == null ? RING_C : prev);
+  });
+  requestAnimationFrame(() => requestAnimationFrame(() => rings.forEach((c) => {
+    c.style.strokeDashoffset = c.dataset.off;
+    ringPrev[c.dataset.ring] = c.dataset.off;
+  })));
+}
+
+function bindLimitActions(root, after) {
+  root.querySelectorAll('[data-lim-reset]').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try {
+      await mgmt('POST', 'reset-quota', { auth_index: b.dataset.limReset });
+      toast(t('Ліміт для {name} скинуто ✓', { name: b.dataset.name }));
+      await loadLimits(true);
+      after();
+    } catch (e) {
+      toast(t('Не вдалось: {e}', { e: e.message }), true);
+      b.disabled = false;
+    }
+  }));
+}
+
+let homeLimSig = '';
+async function refreshHomeLimits(force) {
+  const box = $('homeLimits');
+  if (!box) return;
+  if (!box.children.length) box.innerHTML = '<div class="card lim-card">' + skeletonRows(4) + '</div><div class="card lim-card">' + skeletonRows(4) + '</div>';
+  let r;
+  try { r = await loadLimits(force); } catch (e) { return; }
+  const accounts = r.accounts || [];
+  $('homeLimSummary').innerHTML = limSummaryHTML(r.summary);
+  $('homeLimAge').textContent = '';
+  let html = '';
+  if (r.running === false) {
+    html = '<div class="card lim-card lim-empty"><div class="empty small">' + ic('pause', 'i-lg') + '<div>' + esc(t('Шлюз на паузі — ліміти зʼявляться після запуску.')) + '</div></div></div>';
+  } else if (!accounts.length) {
+    html = '<div class="card lim-card lim-empty"><div class="empty small">' + ic('users', 'i-lg') + '<div>' + esc(t('Акаунтів ще немає')) + '</div>' +
+      '<button class="btn btn-sm" data-goto="cliproxy">' + ic('plus', 'i-sm') + esc(t('Підключити акаунт')) + '</button></div></div>';
+  } else {
+    const rank = { limited: 0, error: 1, warn: 2, ok: 3, disabled: 4 };
+    const withPct = accounts.filter((a) => a.percent).sort((x, y) => rank[x.state] - rank[y.state]);
+    const groups = {};
+    accounts.filter((a) => !a.percent).forEach((a) => { (groups[a.provider] = groups[a.provider] || []).push(a); });
+    let i = 0;
+    html = withPct.map((a) => limAccountCard(a, i++)).join('') +
+      Object.keys(groups).sort().map((p) => limGroupCard(p, groups[p], i++)).join('');
+  }
+  // Countdown text changes every minute; redraw only when something changed.
+  if (html === homeLimSig) return;
+  const first = !homeLimSig;
+  homeLimSig = html;
+  box.classList.toggle('first', first);
+  box.innerHTML = html;
+  paintRings(box);
+  bindLimitActions(box, () => refreshHomeLimits());
+}
+
+// Overview keeps its limits fresh while it is on screen.
+setInterval(() => {
+  if (!document.body.classList.contains('authed') || document.hidden) return;
+  const home = $('page-home');
+  if (home && home.classList.contains('active')) refreshHomeLimits();
+}, 20000);
 
 function relTime(ms) {
   const d = Math.max(0, Date.now() - ms) / 1000;
@@ -645,9 +841,7 @@ function renderActivityChart(box, axis, history) {
 }
 
 function accountOk(f) {
-  const status = f.status || '';
-  const isError = status === 'error' || (f.cooldowns && f.cooldowns.length > 0);
-  return !!status && !isError && status !== 'unavailable' && !f.disabled;
+  return !!f.status && !accountBlocked(f) && !f.disabled;
 }
 
 // One model for everything: all tiers, the default model, every exact swap
@@ -2518,12 +2712,12 @@ async function renderAuthFiles() {
     const fileKey = f.name || f.filename || f.id || '';
     const provider = (f.provider || f.type || '').toLowerCase();
     const ok = accountOk(f);
-    const status = f.disabled ? 'вимкнено' : (ok ? 'активний' : (f.cooldowns && f.cooldowns.length ? 'ліміт' : (f.status || '—')));
+    const [status, stCls] = accountState(f);
     const authIndex = f.auth_index || '';
     return '<div class="auth-file-item">' +
       '<span class="st ' + (ok ? 'ok' : 'bad') + '"></span>' +
       '<span class="af-name"><b>' + esc(f.provider || f.type || 'account') + '</b> · ' + esc(name) + '</span>' +
-      '<span class="chip ' + (ok ? 'ok' : 'err') + '">' + esc(status) + '</span>' +
+      '<span class="chip ' + stCls + '">' + esc(t(status)) + '</span>' +
       '<div class="af-actions">' +
       (authIndex && !ok ? '<button class="btn btn-mini btn-ghost" data-reset-quota="' + esc(authIndex) + '" data-name="' + esc(name) + '" title="Зняти блокування після ліміту (429)">' + ic('zap', 'i-sm') + 'Скинути ліміт</button>' : '') +
       (provider ? '<button class="btn btn-mini btn-warn" data-reauth="' + esc(provider) + '" data-name="' + esc(name) + '" title="Увійти в цей акаунт заново">' + ic('rotate', 'i-sm') + 'Увійти знову</button>' : '') +
@@ -2821,11 +3015,9 @@ $('apiModelSearch').addEventListener('input', filterApiPicker);
 // ---------- metrics page (persistent store on the backend) ----------
 async function refreshMetrics() {
   let s = {};
-  let authFiles = [];
   try {
     const res = await api('/metrics');
     s = (res && res.metrics) || {};
-    if (res && res.auth_files) authFiles = Array.isArray(res.auth_files) ? res.auth_files : (res.auth_files.files || []);
   } catch (e) { return; }
 
   const totalRequests = Number(s.total_requests || 0);
@@ -2843,12 +3035,12 @@ async function refreshMetrics() {
   $('metric-success-counts').textContent = t('{ok} успішних / {bad} помилок', { ok: totalSuccess, bad: totalFailed });
 
   renderActivityChart($('metricsChart'), $('metricsChartAxis'), s.history || []);
-  renderAccountsQuotaTable(authFiles);
+  loadLimits().then((r) => renderAccountsQuotaTable(r.accounts || [])).catch(() => {});
   renderModelsUsageTable(s.model_stats || {});
   renderRecentRequestsTable((s.history || []).slice(0, 50));
 }
 
-$('usage-refresh').addEventListener('click', () => { refreshMetrics(); refreshErrors(); });
+$('usage-refresh').addEventListener('click', async () => { try { await loadLimits(true); } catch (e) { /* engine offline */ } refreshMetrics(); refreshErrors(); });
 
 // ---------- error log ----------
 let ERRORS_CACHE = [];
@@ -3398,71 +3590,43 @@ if ($('set-blacklist-add')) {
 }
 
 // ---------- metrics tables ----------
-function renderAccountsQuotaTable(authFiles) {
+function renderAccountsQuotaTable(accounts) {
   const el = $('accounts-quota-table');
   if (!el) return;
-  if (!authFiles || !authFiles.length) {
+  if (!accounts || !accounts.length) {
     el.innerHTML = '<div class="empty">Немає підключених акаунтів. Додай акаунти на сторінці «Акаунти».</div>';
     return;
   }
-
+  const cell = (a, key) => {
+    const w = a.windows.find((x) => x.key === key);
+    if (!w) return '<td class="muted">—</td>';
+    const reset = limResetText(w);
+    return '<td><div class="lim-cell ' + limLevel(w.usedPercent) + '"><div class="lim-barhead"><b>' + limPct(w.usedPercent) + '</b>' +
+      (reset ? '<span>' + esc(reset) + '</span>' : '') + '</div><div class="lim-bar"><i style="transform:scaleX(' + (Math.min(100, w.usedPercent) / 100).toFixed(3) + ')"></i></div></div></td>';
+  };
+  const rank = { limited: 0, error: 1, warn: 2, ok: 3, disabled: 4 };
+  const rows = accounts.slice().sort((x, y) => rank[x.state] - rank[y.state]);
   let html = '<table class="data-table"><thead><tr>' +
-    '<th>Акаунт / Email</th>' +
-    '<th>Провайдер</th>' +
-    '<th>Статус квоти</th>' +
-    '<th>Запити (OK / Помилки)</th>' +
-    '<th>Дії</th>' +
+    '<th>Акаунт / Email</th><th>Провайдер</th><th>Стан</th><th>5 годин</th><th>Тиждень</th><th>Запити (OK / Помилки)</th><th>Дії</th>' +
     '</tr></thead><tbody>';
-
-  for (const f of authFiles) {
-    const name = f.email || f.account || f.label || f.name || f.id || 'акаунт';
-    const provider = f.provider || f.type || '—';
-    const isError = f.status === 'error' || (f.cooldowns && f.cooldowns.length > 0);
-    const statusClass = isError ? 'error' : 'active';
-    const statusText = isError ? 'Ліміт / 429' : 'Активний (OK)';
-    const authIndex = f.auth_index || '';
-
-    let errMsg = '';
-    if (f.status_message) {
-      errMsg = f.status_message;
-    } else if (f.cooldowns && f.cooldowns.length > 0) {
-      const cd = f.cooldowns[0];
-      errMsg = '429 Quota cooldown: ' + (cd.remaining_seconds || 0) + 's remaining (' + (cd.model_key || '') + ')';
-    }
-
+  for (const a of rows) {
+    const pause = limPauseText(a);
+    const other = a.windows.filter((w) => w.key === 'other').slice(0, 3)
+      .map((w) => esc(limWindowName(w)) + ' ' + limPct(w.usedPercent)).join(' · ');
+    const note = pause || ((a.state === 'limited' || a.state === 'error') ? a.message : '');
     html += '<tr>' +
-      '<td><b>' + esc(name) + '</b></td>' +
-      '<td><span class="chip">' + esc(provider) + '</span></td>' +
-      '<td>' +
-        '<span class="badge-quota ' + statusClass + '">' + esc(statusText) + '</span>' +
-        (errMsg ? '<div class="quota-err-text" title="' + esc(errMsg) + '">' + esc(errMsg) + '</div>' : '') +
-      '</td>' +
-      '<td><b>' + (f.success || 0) + '</b> / <span style="color:' + (f.failed ? '#ef4444' : 'var(--muted)') + '">' + (f.failed || 0) + '</span></td>' +
-      '<td>' +
-        (authIndex
-          ? '<button class="btn btn-mini btn-reset-quota" data-auth-index="' + esc(authIndex) + '" data-name="' + esc(name) + '">' + ic('zap', 'i-sm') + 'Скинути ліміт</button>'
-          : '<span class="muted">—</span>') +
-      '</td>' +
-      '</tr>';
+      '<td><b>' + esc(a.label || a.name) + '</b>' + (other ? '<div class="sub">' + other + '</div>' : '') + '</td>' +
+      '<td><span class="chip">' + esc(provTitle(a.provider)) + (a.plan ? ' · ' + esc(a.plan) : '') + '</span></td>' +
+      '<td>' + limChip(a) + (note ? '<div class="quota-err-text" title="' + esc(a.message || '') + '">' + esc(note) + '</div>' : '') + '</td>' +
+      cell(a, '5h') + cell(a, 'week') +
+      '<td><b>' + (a.success || 0) + '</b> / <span style="color:' + (a.failed ? 'var(--bad)' : 'var(--muted)') + '">' + (a.failed || 0) + '</span></td>' +
+      '<td>' + (limResetBtn(a) || '<span class="muted">—</span>') + '</td></tr>';
   }
   html += '</tbody></table>';
+  if (html === el._sig) return;
+  el._sig = html;
   el.innerHTML = html;
-
-  el.querySelectorAll('.btn-reset-quota').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const idx = btn.dataset.authIndex;
-      const nm = btn.dataset.name;
-      btn.disabled = true;
-      try {
-        await mgmt('POST', 'reset-quota', { auth_index: idx });
-        toast(t('Квоту акаунта {name} успішно скинуто ✓', { name: nm }));
-        refreshMetrics();
-      } catch (e) {
-        toast(t('Не вдалося скинути квоту: {e}', { e: e.message }), true);
-        btn.disabled = false;
-      }
-    });
-  });
+  bindLimitActions(el, () => refreshMetrics());
 }
 
 function renderModelsUsageTable(modelStats) {
@@ -3783,4 +3947,51 @@ fillLangSelect($('set-lang'));
     if (a.lang && a.lang !== LANG && I18N_LANGS.some((l) => l.code === a.lang)) setLang(a.lang);
   } catch (e) { /* keep default */ }
 })();
+// ---------- design (theme) ----------
+const THEME_KEY = 'cl.theme';
+const THEMES = ['console', 'glass', 'terminal'];
+function currentTheme() { return document.documentElement.dataset.theme || 'console'; }
+function paintThemePicker() {
+  document.querySelectorAll('[data-theme-pick]').forEach((b) => {
+    const on = b.dataset.themePick === currentTheme();
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+}
+function applyTheme(name) {
+  if (THEMES.indexOf(name) < 0) name = 'console';
+  const set = () => {
+    if (name === 'console') delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = name;
+    paintThemePicker();
+  };
+  // Cross-fade the whole window when the browser can; otherwise switch at once.
+  if (name !== currentTheme() && document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) document.startViewTransition(set);
+  else set();
+  try { localStorage.setItem(THEME_KEY, name); } catch (e) { /* ignore */ }
+}
+document.querySelectorAll('[data-theme-pick]').forEach((b) => b.addEventListener('click', async () => {
+  const name = b.dataset.themePick;
+  applyTheme(name);
+  try {
+    await api('/app/settings', { method: 'PUT', body: JSON.stringify({ theme: name === 'console' ? '' : name }) });
+  } catch (e) { toast(t('Не збережено: {e}', { e: e.message }), true); }
+}));
+paintThemePicker();
+// The design saved in config.json wins: localStorage belongs to one port.
+(async () => {
+  try {
+    const a = await api('/app/settings');
+    if ((a.theme || 'console') !== currentTheme()) applyTheme(a.theme || 'console');
+  } catch (e) { /* keep the local one */ }
+})();
+
+$('homeLimRefresh').addEventListener('click', async () => {
+  const b = $('homeLimRefresh');
+  b.disabled = true;
+  b.classList.add('spin');
+  await refreshHomeLimits(true);
+  setTimeout(() => { b.disabled = false; b.classList.remove('spin'); }, 600);
+});
+
 checkAuthGate();

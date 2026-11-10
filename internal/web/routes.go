@@ -79,6 +79,8 @@ func (a *App) control(w http.ResponseWriter, r *http.Request, path string) {
 		a.apiErrorsGet(w, r)
 	case path == "/errors/clear" && r.Method == http.MethodPost:
 		a.apiErrorsClear(w, r)
+	case path == "/limits" && r.Method == http.MethodGet:
+		a.apiLimits(w, r)
 	case path == "/metrics" && r.Method == http.MethodGet:
 		a.apiMetricsGet(w, r)
 	case path == "/metrics/clear" && r.Method == http.MethodPost:

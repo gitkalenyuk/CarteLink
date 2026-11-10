@@ -50,7 +50,7 @@ func (a *App) mgmtRequestType(method, path string, body []byte, ctype string) (i
 		return http.StatusServiceUnavailable, errJSON, "application/json"
 	}
 	cfg := a.snapshotConfig()
-	full := engineBaseURL(cfg.Cliproxy.Host, a.EffectivePort()) + path
+	full := a.selfBaseURL() + path
 	var rdr io.Reader
 	if body != nil {
 		rdr = bytes.NewReader(body)
@@ -148,8 +148,8 @@ func (a *App) apiClipOauthStart(w http.ResponseWriter, r *http.Request) {
 			// Plugin logins may answer with a path on the engine itself
 			// (e.g. /v0/resource/plugins/mirasim/...): make it absolute.
 			if strings.HasPrefix(parsed.URL, "/") {
-				cfg := a.snapshotConfig()
-				parsed.URL = "http://" + net.JoinHostPort(config.DisplayHost(cfg.Cliproxy.Host), strconv.Itoa(a.EffectivePort())) + parsed.URL
+				bh, bp := a.engineAddr()
+				parsed.URL = "http://" + net.JoinHostPort(config.DisplayHost(bh), strconv.Itoa(bp)) + parsed.URL
 				var full map[string]any
 				if json.Unmarshal(raw, &full) == nil {
 					full["url"] = parsed.URL
@@ -252,7 +252,7 @@ func openCleanBrowser(u string) *exec.Cmd {
 			{filepath.Join(pf, `Google\Chrome\Application\chrome.exe`), "--incognito"},
 			{filepath.Join(pf86, `Google\Chrome\Application\chrome.exe`), "--incognito"},
 			{filepath.Join(local, `Google\Chrome\Application\chrome.exe`), "--incognito"},
-			{filepath.Join(pf, `BraveSoftware\Brave-Browser\Applicationrave.exe`), "--incognito"},
+			{filepath.Join(pf, `BraveSoftware\Brave-Browser\Application\brave.exe`), "--incognito"},
 			{"msedge.exe", "--inprivate"},
 			{"chrome.exe", "--incognito"},
 		}

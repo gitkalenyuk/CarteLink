@@ -99,6 +99,8 @@ func TestTableMode(t *testing.T) {
 
 func TestUnmappedStrategies(t *testing.T) {
 	cfg := config.Defaults()
+	// A "provider:" prefix is dropped only for a provider that exists.
+	cfg.Providers = []config.Provider{{ID: "prov", Enabled: true}}
 	cfg.Routing.DefaultModel = "prov:fallback-model"
 	known := func(m string) bool { return m == "served-model" }
 

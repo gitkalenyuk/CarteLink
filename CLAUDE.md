@@ -1,6 +1,6 @@
 # CarteLink — instructions for Claude Code
 
-Локальний AI-шлюз (Go) від YouTube Cartel, версія **2.6.0**. Вихідний код CLIProxyAPI
+Локальний AI-шлюз (Go) від YouTube Cartel, версія **2.7.0**. Вихідний код CLIProxyAPI
 вкомпільовано в бінарник (`third_party/CLIProxyAPI`, `go.mod replace`). UI — вбудовані
 статичні файли в `internal/web/ui`. Користувач пише українською — відповідай українською.
 Історія назв: VisionGateGo → CartelGate (2.0) → **CarteLink** (2.1+). Змін див. `CHANGELOG.md`.
@@ -20,6 +20,7 @@
 | `internal/web/handlers_*.go`, `routes.go` | Control API `/api/*` (конфіг, сервер, OAuth, метрики, `/app/*`) |
 | `internal/web/handlers_scoped.go` | `/api/scoped-keys`: створення, зміна, видалення таких ключів |
 | `internal/web/metrics_store.go` | Статистика: бекенд сам вичитує `usage-queue` → `data/metrics.json` |
+| `internal/web/limits.go` | Ліміти акаунтів: `GET /api/limits` (сигнали рушія Codex/Claude → вікна 5 год/тиждень, квоти плагінів з кешем 5 хв) |
 | `internal/web/errlog.go` | Журнал помилок запитів → `data/errors.jsonl` (перехоплює root-middleware в `main.go`) |
 | `internal/web/handlers_models.go` | `/api/routing/apply-all`, `/api/switcher*`, `/api/errors*` |
 | `internal/desktop/switcher_windows.go` | Плаваючий перемикач: друге WebView2-вікно (TOPMOST, TOOLWINDOW), закриття = сховати |
@@ -34,12 +35,23 @@
 `index.html` через `ic(name)` в `app.js`, без емодзі-іконок); продукт — `PRODUCT.md`.
 Сайдбар: Шлюз (Огляд, Моделі, Акаунти, API-ключі, Статистика) · Керування (Підключити програму, Провайдери,
 Плагіни, Системний промпт, Налаштування, Довідка).
-Огляд (модель зараз + швидке перемикання/пресети, шлюз з адресою й ключем, KPI, графік 24 год,
-акаунти, останні помилки; майстер «3 кроки» ховається, коли все зроблено) · Підключити програму (інструкції
+Огляд (модель зараз + швидке перемикання/пресети, шлюз з адресою й ключем, ліміти акаунтів, KPI,
+графік 24 год, останні помилки; майстер «3 кроки» ховається, коли все зроблено) · Підключити програму (інструкції
 PowerShell/CMD/bash + файли) · Акаунти (OAuth) · Моделі (режими «Рівні»/«Таблиця»,
 модель за замовчуванням, «Невідомі моделі», черговість акаунтів) · Провайдери (OpenAI-сумісні,
 рідні ключі, акаунти-провайдери) · Статистика · Налаштування (автозапуск, трей, доступ,
 шлюз, чорний список, розширені) · Довідка.
+
+## Ліміти й дизайни
+- Ліміти: UI бере все з `GET /api/limits` (`limits.go`) і сам заголовки провайдерів не розбирає. Відсотки є лише там,
+  де їх повідомляє провайдер (Codex `x-codex-primary/secondary-*`, Claude `anthropic-ratelimit-unified-*`, плагіни з
+  `supports_quota`); решта акаунтів мають лише стан. Поля `cooldowns` в `auth-files` рушія 7.x немає — стан рахувати з
+  `unavailable` / `next_retry_after` / `status_message` (`accountState` в `app.js`).
+- Дизайни: `data-theme` на `<html>` (`glass`, `terminal`; без атрибута — «Консоль»), лише перевизначення токенів у кінці
+  `style.css`. Зберігається в `config.json → desktop.theme` (`config.ValidTheme`) і дублюється в `localStorage`, щоб не блимало
+  при старті. Новий дизайн = блок токенів + плитка в `#themePicker` + назва в `ValidTheme` і `THEMES`.
+- До свого рушія ходити через `a.selfBaseURL()` / `a.engineAddr()` (адреса, де він слухає зараз); `EffectivePort()` — це
+  порт з налаштувань, який почне діяти після перезапуску.
 
 ## Локалізація
 - Джерело — українські рядки прямо в HTML/JS; вони ж ключі словника `i18n/<lang>.js`
@@ -144,7 +156,7 @@ Electron-мотлоху).
    `gui_darwin.go` (cgo) на Windows не компілюється — перша реальна перевірка саме тут;
    якщо збірка падає, виправляй `internal/desktop/gui_darwin.go`.
 5. **Перевір наживо:** `open dist/CarteLink.app`, потім
-   `curl -s http://127.0.0.1:8317/api/status` → `"version":"2.6.0"`. Перевір Cmd+C/Cmd+V у вікні.
+   `curl -s http://127.0.0.1:8317/api/status` → `"version":"2.7.0"`. Перевір Cmd+C/Cmd+V у вікні.
 
 ## Правила проєкту
 
@@ -172,6 +184,8 @@ Electron-мотлоху).
   ключів повертає `{"<kind>": [...]}`, PUT приймає голий масив.
 - Конфіг з UI — тільки через `saveConfig()` в `app.js` (черга + перевірка відповіді);
   небезпечні дії — через `confirmDo()`.
+- Префікс `провайдер:` у назві моделі знімає лише `config.StripProviderPrefix` (відомі провайдери): справжні id теж мають
+  двокрапку (`qwen3:32b`).
 - Мапінг: ніяких підрядків (баг 2.2.0: правило `mini` ловило всі `gemini-*`). Нові аліаси —
   у `config.TierAliases`. Нових провайдерів з API-ключем — у `presets.js`, нових програм — у `clients.js`.
 - `usage-queue` вичитує **лише** бекенд (`metrics_store.go`) — UI не має туди ходити.
