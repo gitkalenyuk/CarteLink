@@ -73,7 +73,6 @@ func (a *App) switcherState(cfg *config.Config) anyMap {
 		"current":    currentMainModel(cfg),
 		"lang":       cfg.Desktop.Lang,
 		"available":  a.switcherAvailable(),
-		"authed":     a.IsAuthenticated(),
 	}
 }
 

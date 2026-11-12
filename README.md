@@ -8,7 +8,7 @@ Meta + 70 OpenAI-сумісних API: OpenRouter, Groq, DeepSeek, Ollama…) в
 Claude Code, Codex, Cursor, Cline, Aider і ще ~20 програм підключаються за готовими
 інструкціями зі сторінки «Підключити програму».
 
-Доступ — лише для учасників закритої групи **Secret YT_cartel 🧠** (вхід через Telegram).
+Вхід не потрібен: запустив — і працює.
 
 The original [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) source code is
 compiled directly into this binary — the engine IS the server. The CarteLink UI is
@@ -23,7 +23,7 @@ mounted on the same Gin engine; Windows gets a WebView2 window with a tray icon,
 | `internal/cliproxy/embedded.go` | SDK embedding: `NewBuilder()…Build()` + `Run(ctx)`, `config.yaml` sync |
 | `internal/desktop/` | Native window + tray (Windows), WKWebView (macOS), autostart (all OS) |
 | `internal/instance/` | Single instance: a second launch shows the running window |
-| `internal/web/` | CarteLink UI (embedded assets) + control API + Telegram auth |
+| `internal/web/` | CarteLink UI (embedded assets) + control API |
 | `internal/web/ui/presets.js` | 70+ provider presets for the Providers page |
 | `internal/web/ui/clients.js` | ~24 client apps with setup instructions |
 | `routing.go` | Model mapping (tiers / table / smart fallback) |
@@ -42,19 +42,6 @@ Windows: `CarteLink.exe`. macOS: `CarteLink.app` (see *Building for macOS*).
   port **for this run only** and shows a banner; it is never saved.
 - `--headless` runs server-only (no window); `--port N` overrides the port for this run;
   `--minimized` starts hidden in the tray (used by autostart).
-
-## Access (Telegram gate)
-
-- Model traffic (`/v1/*`) returns 403 until the user logs in with Telegram and the broker
-  confirms membership. The gate is compiled in: `config.json` cannot switch it off or
-  point it at another broker (the broker URL can only be changed at build time with
-  `-ldflags "-X cartelgate/internal/config.BrokerURL=https://…"`).
-- The broker (`https://yt-cartel.vercel.app`, repo `gitkalenyuk/yt-cartel`) checks the
-  group configured for `appId: "cartelink"` (`APP_GROUP_CARTELINK` on Vercel). Only the
-  `private` tier is accepted — no trial.
-- Membership is re-checked every 5 minutes. If the broker is unreachable, a session that
-  was verified within the last 24 h keeps working; after that the UI shows «Немає зв'язку».
-- Development builds without the gate: `go build -tags devnoauth` (never ship these).
 
 ## Models
 

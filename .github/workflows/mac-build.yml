@@ -36,8 +36,8 @@ jobs:
             sleep 1
           done
           curl -s -m 5 http://127.0.0.1:8317/api/status | grep -q "\"version\":\"$version\""
-          # A release build keeps the Telegram gate: no model traffic before login.
-          test "$(curl -s -o /dev/null -w '%{http_code}' -m 5 http://127.0.0.1:8317/v1/models)" = "403"
+          # No login gate: the model API answers right away (401 without a key).
+          test "$(curl -s -o /dev/null -w '%{http_code}' -m 5 http://127.0.0.1:8317/v1/models)" = "401"
           kill "$pid"
 
       - uses: actions/upload-artifact@v4

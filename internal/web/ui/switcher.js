@@ -115,8 +115,6 @@ function fill(sel, cur) {
 function paint(st) {
   const prev = STATE;
   STATE = st;
-  $('locked').style.display = st.authed ? 'none' : '';
-  $('sw').style.display = st.authed ? '' : 'none';
 
   for (const n of [1, 2]) {
     const m = n === 1 ? st.model1 : st.model2;

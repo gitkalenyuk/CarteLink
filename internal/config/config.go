@@ -16,7 +16,7 @@ import (
 )
 
 // Version is the app version reported in /health and the UI.
-const Version = "2.7.0"
+const Version = "2.8.0"
 
 // AppName is the product name used in window titles, logs and messages.
 const AppName = "CarteLink"
@@ -35,37 +35,11 @@ const (
 // copied over on first start so existing accounts and settings survive.
 var legacyHomeNames = []string{"CartelGate", "VisionGateGo"}
 
-// BrokerURL is the Telegram auth broker. It is compiled in (override only at
-// build time: -ldflags "-X cartelgate/internal/config.BrokerURL=https://...") so
-// the access gate cannot be redirected from config.json.
-var BrokerURL = "https://yt-cartel.vercel.app"
-
-// AuthAppID identifies CarteLink to the broker; the broker checks the group
-// configured for it (APP_GROUP_CARTELINK on Vercel).
-const AuthAppID = "cartelink"
-
 // DefaultPort is the fixed gateway port clients are configured for.
 const DefaultPort = 8317
 
 // schemaVersion is bumped when Load needs a one-time migration.
 const schemaVersion = 2
-
-type AuthUser struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Username string `json:"username,omitempty"`
-}
-
-// AuthConfig persists the Telegram session. Enabled/BrokerURL are legacy
-// fields: they are read for compatibility but ignored — the gate is always on
-// and the broker URL is compiled in.
-type AuthConfig struct {
-	Enabled      bool      `json:"enabled"`
-	BrokerURL    string    `json:"brokerUrl,omitempty"`
-	Session      string    `json:"session,omitempty"`
-	User         *AuthUser `json:"user,omitempty"`
-	LastVerified int64     `json:"lastVerified,omitempty"` // unix time of the last successful broker check
-}
 
 // Desktop holds window/tray preferences (autostart itself lives in the OS).
 type Desktop struct {
@@ -278,7 +252,6 @@ type Config struct {
 	Schema     int        `json:"schema,omitempty"`
 	APIKey     string     `json:"apiKey"`
 	RequireKey bool       `json:"requireKey"`
-	Auth       AuthConfig `json:"auth"`
 	Providers  []Provider `json:"providers"`
 	Routing    Routing    `json:"routing"`
 	Cliproxy   Cliproxy   `json:"cliproxy"`
@@ -491,7 +464,6 @@ func WriteFileAtomic(path string, data []byte) error {
 func Defaults() *Config {
 	c := &Config{
 		RequireKey:     true,
-		Auth:           AuthConfig{Enabled: true},
 		Providers:      []Provider{},
 		ModelBlacklist: []string{},
 		Desktop:        Desktop{CloseToTray: true},
@@ -578,9 +550,6 @@ func Normalize(c *Config) {
 	if c.APIKey == "" {
 		c.APIKey = NewKey()
 	}
-	// The gate cannot be switched off or redirected from config.json.
-	c.Auth.Enabled = true
-	c.Auth.BrokerURL = ""
 	if c.Routing.ModelMap == nil {
 		c.Routing.ModelMap = map[string]string{}
 	}

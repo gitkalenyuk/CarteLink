@@ -114,8 +114,6 @@ svg.ico, svg.tick { width: 15px; height: 15px; flex: 0 0 auto; fill: none; strok
 .auto.armed { border-color: rgba(255, 106, 85, 0.4); }
 .auto.armed .auto-t i { color: var(--accent); }
 
-.locked { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; height: 100%; padding: 16px; text-align: center; color: var(--text-2); }
-.locked b { color: var(--text); font-size: 14px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }

@@ -1,6 +1,6 @@
 # CarteLink — instructions for Claude Code
 
-Локальний AI-шлюз (Go) від YouTube Cartel, версія **2.7.0**. Вихідний код CLIProxyAPI
+Локальний AI-шлюз (Go) від YouTube Cartel, версія **2.8.0**. Вихідний код CLIProxyAPI
 вкомпільовано в бінарник (`third_party/CLIProxyAPI`, `go.mod replace`). UI — вбудовані
 статичні файли в `internal/web/ui`. Користувач пише українською — відповідай українською.
 Історія назв: VisionGateGo → CartelGate (2.0) → **CarteLink** (2.1+). Змін див. `CHANGELOG.md`.
@@ -9,14 +9,13 @@
 
 | Шлях | Що там |
 |---|---|
-| `main.go` | Старт: одна копія, конфіг, лог, порт на сесію, root-middleware (гейт, пауза, мапінг, `/v1/models`), вікно/консоль |
+| `main.go` | Старт: одна копія, конфіг, лог, порт на сесію, root-middleware (пауза, мапінг, `/v1/models`), вікно/консоль |
 | `routing.go` | Мапінг моделей: рівні / таблиця / «розумний» fallback. **Лише точні збіги та явні префікси** |
 | `scoped.go` | Обмеження API-ключів із власними моделями (перевірка в root-middleware) |
 | `localaccess.go` | Іншим пристроям — лише API моделей (`networkAllowedPath`, білий список); панель, `/api/*`, Management API — лише з цього комп'ютера |
 | `internal/config/` | `config.json`: схема, міграції (schema 2), `Normalize`, атомарний `Save`, `TierAliases` |
 | `internal/cliproxy/` | Вбудований рушій + `SyncConfigYAML` (керовані ключі `config.yaml`) |
 | `internal/web/server.go` | `App`: стан, порт сесії (`EffectivePort`), кеш моделей (`IsKnownModel`) |
-| `internal/web/auth*.go` | Telegram-гейт: `auth.go` логіка, `auth_gate.go` / `auth_gate_dev.go` (тег `devnoauth`) |
 | `internal/web/handlers_*.go`, `routes.go` | Control API `/api/*` (конфіг, сервер, OAuth, метрики, `/app/*`) |
 | `internal/web/handlers_scoped.go` | `/api/scoped-keys`: створення, зміна, видалення таких ключів |
 | `internal/web/metrics_store.go` | Статистика: бекенд сам вичитує `usage-queue` → `data/metrics.json` |
@@ -104,19 +103,11 @@ PowerShell/CMD/bash + файли) · Акаунти (OAuth) · Моделі (р�
 - Каталог моделей рушія оновлюється з мережі через `internal/cliproxy/models_updater.go`
   (`go:linkname` на `registry.StartModelsUpdater` — апстрім запускає його лише у своєму main).
 
-## Авторизація (Telegram Gate)
-- Доступ — лише учасникам закритої групи **Secret YT_cartel 🧠** (ID `-100xxxxxxxxxx`).
-- Брокер: `https://yt-cartel.vercel.app`, репо `gitkalenyuk/yt-cartel` (Next.js, спільний з
-  іншими застосунками). CarteLink шле `POST /api/auth/verify` з
-  `{"app":true,"appId":"cartelink"}` + кука `ytc_session`; брокер перевіряє групу зі змінної
-  Vercel `APP_GROUP_CARTELINK` (бот `@ytcartelappbot` — адмін групи). Приймається лише
-  `tier: "private"`, тріалу немає. Інші застосунки на брокері працюють як раніше.
-- Гейт зашитий у збірку: `config.json` не вимикає і не перенаправляє його (`auth.enabled`,
-  `auth.brokerUrl` ігноруються). URL брокера — лише `-ldflags -X cartelgate/internal/config.BrokerURL=…`.
-- Локальні тести UI без гейта: `go build -tags devnoauth` — **ніколи не роздавати**.
-- Стани: authorized / checking / need_login / awaiting / denied / offline. Вочдог — 5 хв;
-  без зв'язку з брокером — 24 год пільги від `auth.lastVerified`.
-- 403 на `/v1/*` без входу; UI закритий оверлеєм `#gate` і сам блокується при відкликанні.
+## Доступ без входу
+- Вхід через Telegram прибрано (2026-11-12, рішення користувача): програма доступна всім — запустив і працює.
+  Гейта, брокера, `config.json → auth` і тегу `devnoauth` більше немає; старий ключ `auth` у `config.json`
+  ігнорується й зникає при першому збереженні. Не повертати.
+- `#gate` в `index.html` — лише заставка запуску (`revealApp` → `body.booted`).
 
 ## Поведінка «налаштував і забув»
 - Порт фіксований **8317**. Зайнятий → інший порт лише на цей запуск (не зберігається);
@@ -132,7 +123,7 @@ PowerShell/CMD/bash + файли) · Акаунти (OAuth) · Моделі (р�
 `%AppData%\CarteLink` (Windows), `~/Library/Application Support/CarteLink` (macOS);
 `CARTELINK_HOME` переносить папку. Міграція з `CartelGate` / `VisionGateGo` (без кешів і
 Electron-мотлоху).
-- `config.json` — ключ шлюзу, маршрутизація, чорний список, вікно, сесія Telegram
+- `config.json` — ключ шлюзу, маршрутизація, чорний список, вікно
 - `data/cliproxy/config.yaml` — ключі провайдерів і рідні ключі (рушій)
 - `data/cliproxy/auths/*.json` — OAuth-акаунти; `data/cliproxy/logs/app.log` — лог
 - `data/metrics.json` — статистика; `instance.json` — запущена копія
@@ -156,7 +147,7 @@ Electron-мотлоху).
    `gui_darwin.go` (cgo) на Windows не компілюється — перша реальна перевірка саме тут;
    якщо збірка падає, виправляй `internal/desktop/gui_darwin.go`.
 5. **Перевір наживо:** `open dist/CarteLink.app`, потім
-   `curl -s http://127.0.0.1:8317/api/status` → `"version":"2.7.0"`. Перевір Cmd+C/Cmd+V у вікні.
+   `curl -s http://127.0.0.1:8317/api/status` → `"version":"2.8.0"`. Перевір Cmd+C/Cmd+V у вікні.
 
 ## Правила проєкту
 
@@ -165,7 +156,7 @@ Electron-мотлоху).
   Готові збірки класти в `Desktop\CarteLink_extras\builds\`.
 - Перевірки: `go vet . ./internal/...`, `go test . ./internal/...`,
   `GOOS=darwin CGO_ENABLED=0 go vet . ./internal/...`, `node --check internal/web/ui/*.js`.
-- Тест UI наживо: `.claude/launch.json` → `cartelink-dev` (devnoauth-білд у `%TEMP%\cl-dev`,
+- Тест UI наживо: `.claude/launch.json` → `cartelink-dev` (білд у `%TEMP%\cl-dev`,
   ізольований `CARTELINK_HOME`, порт 8419). GUI-тести — теж з ізольованим `CARTELINK_HOME`;
   реєстр (автозапуск) після тесту повертати як було.
 - `third_party/CLIProxyAPI` — чистий реліз апстріму (зараз **7.3.20**, без .github/assets/auths/examples;

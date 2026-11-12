@@ -104,8 +104,6 @@ func main() {
 
 	app := web.NewApp(cfg)
 	app.SetModelResolver(func(m string) string { return resolveModel(app.CurrentConfig(), m, app.IsKnownModel) })
-	app.InitAuth()
-	app.StartAuthWatchdog()
 	app.StartMetricsCollector()
 	desktop.RefreshAutostart()
 
@@ -149,13 +147,12 @@ func main() {
 	//   0. other devices get the model API only (see localaccess.go);
 	//   1. send "/" to the GUI (upstream registers its own JSON root, so this
 	//      has to intercept before routing, not add a route);
-	//   2. auth gate: model traffic needs a verified Telegram membership;
-	//   3. pause-gate: while "stopped" from the UI, API traffic gets 503 but
+	//   2. pause-gate: while "stopped" from the UI, API traffic gets 503 but
 	//      the panel, control API and healthz stay alive (they share the
 	//      port — a hard server shutdown would kill the panel too);
-	//   4. scoped API keys: a key limited to chosen models reaches only those
+	//   3. scoped API keys: a key limited to chosen models reaches only those
 	//      (see scoped.go);
-	//   5. model mapping — rewrite the requested model name on the chat
+	//   4. model mapping — rewrite the requested model name on the chat
 	//      endpoints (read per request, so saving it in the UI applies
 	//      immediately) and serve an honest /v1/models.
 	root := func(c *gin.Context) {
@@ -190,17 +187,6 @@ func main() {
 			strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/v0/management/") ||
 			strings.HasPrefix(p, "/v0/resource/plugins/") ||
 			p == "/management.html" || p == "/healthz"
-		if !isPanel && !app.IsAuthenticated() {
-			app.ErrorLog().Add(web.ErrorEntry{Status: 403, Kind: "gateway", Method: c.Request.Method, Path: p,
-				Client: c.Request.UserAgent(), Message: "not_authenticated: Telegram login required"})
-			c.AbortWithStatusJSON(403, gin.H{
-				"error": gin.H{
-					"type":    "not_authenticated",
-					"message": "CarteLink: потрібна авторизація через Telegram (Secret YT_cartel 🧠). Увійдіть у застосунку.",
-				},
-			})
-			return
-		}
 		if !isPanel && app.Paused() {
 			app.ErrorLog().Add(web.ErrorEntry{Status: 503, Kind: "gateway", Method: c.Request.Method, Path: p,
 				Client: c.Request.UserAgent(), Message: "paused: CarteLink is stopped"})

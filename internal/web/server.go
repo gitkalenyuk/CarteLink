@@ -53,17 +53,9 @@ type App struct {
 	// restarting is set while EngineRestart tears the engine down and brings
 	// it back (possibly on another port); lastError keeps the most recent
 	// start failure for the status endpoint.
-	restarting atomic.Bool
-	lastError  string
-	// auth fields
-	authMu        sync.Mutex
-	authStatus    string
-	authReason    string
-	authSession   string
-	authUser      *config.AuthUser
-	loopbackSrv   *http.Server
-	loopbackNonce string
-	metricsStore  *MetricsStore
+	restarting   atomic.Bool
+	lastError    string
+	metricsStore *MetricsStore
 	// sessionPort overrides the configured port for this run only.
 	sessionPort int
 	// boundHost/boundPort: where the engine listens right now. A saved host or
@@ -467,7 +459,7 @@ func engineBaseURL(host string, port int) string {
 }
 
 func (a *App) refreshModelCatalog() {
-	if !a.EngineRunning() || !a.IsAuthenticated() {
+	if !a.EngineRunning() {
 		return
 	}
 	cfg := a.snapshotConfig()

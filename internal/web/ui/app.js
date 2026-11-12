@@ -294,7 +294,7 @@ $('btnRevealKey').addEventListener('click', () => {
 });
 
 // Sidebar status: a light poll so the pill stays honest everywhere.
-setInterval(() => { if (document.body.classList.contains('authed')) loadStatus().catch(() => {}); }, 5000);
+setInterval(() => { if (document.body.classList.contains('booted')) loadStatus().catch(() => {}); }, 5000);
 
 // ---------- model option lists (shared by every model <select>) ----------
 let MODEL_OPTS = [];
@@ -780,7 +780,7 @@ async function refreshHomeLimits(force) {
 
 // Overview keeps its limits fresh while it is on screen.
 setInterval(() => {
-  if (!document.body.classList.contains('authed') || document.hidden) return;
+  if (!document.body.classList.contains('booted') || document.hidden) return;
   const home = $('page-home');
   if (home && home.classList.contains('active')) refreshHomeLimits();
 }, 20000);
@@ -3048,7 +3048,6 @@ let ERRORS_CACHE = [];
 function errorHint(e) {
   const st = e.status;
   const m = String(e.message || '').toLowerCase();
-  if (e.kind === 'gateway' && st === 403) return 'Увійди через Telegram (Налаштування → Доступ).';
   if (e.kind === 'gateway' && st === 503) return 'Шлюз на паузі — натисни «Запустити» на Головній.';
   if (m.indexOf('blacklist') >= 0) return 'Модель у чорному списку (Налаштування).';
   if (e.kind === 'auto') return 'Повернути модель можна на сторінці «Акаунти» → моделі акаунта.';
@@ -3337,7 +3336,6 @@ async function refreshSettings() {
 
   try { await loadStatus(); LAST_EP = await api('/endpoints'); } catch (e) { /* keep */ }
   renderClipKeys();
-  paintAuthSettings(currentAuthState);
 }
 
 async function saveAppSetting(patch) {
@@ -3724,206 +3722,15 @@ if ($('btnMetricsExport')) {
   });
 }
 
-// ================= TELEGRAM ACCESS GATE =================
-const SVG_TG = '<svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:currentColor;vertical-align:middle;margin-right:6px"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg>';
-let currentAuthState = null;
-let authPollTimer = null;
-let authPollDeadline = 0;
-let wasAuthed = false;
-
-function renderUserBox(user) {
-  const box = $('userBox');
-  if (!user) { box.style.display = 'none'; return; }
-  const uEl = $('userName');
-  const label = String(user.username || user.name || '?').replace(/^@/, '');
-  if ($('userInitials')) $('userInitials').textContent = label.slice(0, 2).toUpperCase();
-  if (user.username) {
-    const u = user.username.replace(/^@/, '');
-    uEl.innerHTML = '<a href="https://t.me/' + esc(u) + '" target="_blank" rel="noopener noreferrer" style="color:var(--text);text-decoration:none;font-weight:600">@' + esc(u) + '</a>';
-  } else {
-    uEl.textContent = user.name || 'Учасник';
-  }
-  box.style.display = 'flex';
-}
-
-function renderGate(state) {
-  const s = (state && state.status) || 'loading';
-  let html = '';
-  if (s === 'loading' || s === 'checking') {
-    html = '<div class="gate-spin"></div><h1>Перевіряємо доступ…</h1><p>Підтверджуємо членство у спільноті Secret YT_cartel 🧠</p>';
-  } else if (s === 'awaiting') {
-    html = '<div class="gate-spin"></div><h1>Заверши вхід у браузері</h1><p>Відкрився браузер — увійди через Telegram і дозволь доступ. Це вікно оновиться саме.</p>'
-      + '<button class="gate-btn alt" id="gLogin">Відкрити браузер ще раз</button>'
-      + '<button class="gate-btn ghost" id="gCancel">Скасувати</button>';
-  } else if (s === 'need_login') {
-    const expired = state && state.reason === 'session_expired';
-    html = '<h1>' + (expired ? 'Потрібно увійти знову' : 'Вхід для своїх') + '</h1><p>' +
-      (expired ? 'Сесія Telegram закінчилась. Увійди ще раз — це займе кілька секунд.' : 'Увійди через Telegram. Доступ мають учасники закритої спільноти <b>Secret YT_cartel 🧠</b>.') + '</p>'
-      + '<button class="gate-btn" id="gLogin">' + SVG_TG + '<span>Увійти через Telegram</span></button>'
-      + '<div class="gate-note">Відкриється офіційне вікно Telegram. Ми не бачимо твій пароль чи номер — лише підтвердження від Telegram.</div>';
-  } else if (s === 'denied') {
-    html = '<h1>Доступ обмежено</h1><p>Твій акаунт Telegram не є учасником закритої групи <b>Secret YT_cartel 🧠</b>. CarteLink доступний лише учасникам групи.</p>'
-      + '<a class="gate-btn gold" href="https://t.me/tribute/app?startapp=eUb" target="_blank" rel="noopener" style="text-decoration:none"><span>Отримати доступ</span></a>'
-      + '<button class="gate-btn alt" id="gRecheck">Я вже вступив — перевірити</button>'
-      + '<button class="gate-btn alt" id="gLogin">↺ Увійти іншим акаунтом Telegram</button>'
-      + '<div class="gate-note">Щойно вступив? Зачекай кілька секунд і натисни «перевірити».</div>';
-  } else if (s === 'offline') {
-    html = '<h1>Немає зв\'язку з сервером перевірки</h1><p>Не вдається підтвердити доступ (немає інтернету або сервер недоступний). CarteLink спробує знову автоматично.</p>'
-      + '<button class="gate-btn" id="gRecheck">Спробувати зараз</button>';
-  } else {
-    html = '<h1>Помилка перевірки доступу</h1><p>Не вдалося зв\'язатися з застосунком.</p>'
-      + '<button class="gate-btn" id="gRecheck">Спробувати ще раз</button>'
-      + (state && state.reason ? '<div class="gate-note" style="color:var(--red)">' + esc(t('Причина: {e}', { e: state.reason })) + '</div>' : '');
-  }
-  $('gateBody').innerHTML = html;
-  const bind = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
-  bind('gLogin', startTelegramLogin);
-  bind('gRecheck', recheckAuth);
-  bind('gCancel', logoutTelegram);
-}
-
-function paintAuthSettings(st) {
-  if (!st) return;
-  const map = {
-    authorized: ['Доступ відкрито', 'var(--green)'],
-    checking: ['Перевіряємо…', 'var(--amber)'],
-    awaiting: ['Очікуємо вхід у браузері', 'var(--amber)'],
-    denied: ['Не учасник групи', 'var(--red)'],
-    offline: ['Немає зв\'язку з сервером перевірки', 'var(--amber)'],
-    need_login: ['Потрібен вхід', 'var(--amber)'],
-  };
-  const [text, color] = map[st.status] || ['—', 'var(--muted)'];
-  $('set-auth-status').textContent = text;
-  $('set-auth-status').style.color = color;
-  const u = st.user;
-  $('set-auth-user').textContent = u ? ((u.name || '') + (u.username ? ' (@' + u.username + ')' : '')) : '—';
-  $('set-btn-login').style.display = (st.status === 'need_login' || st.status === 'denied') ? '' : 'none';
-  $('set-btn-logout').style.display = st.status === 'authorized' ? '' : 'none';
-}
-
-function stopAuthPoll() {
-  if (authPollTimer) { clearInterval(authPollTimer); authPollTimer = null; }
-}
-
-// While the gate is up (login in the browser, first check, offline) poll the
-// backend; every state change is applied — nothing can spin forever.
-function startAuthPoll() {
-  if (authPollTimer) return;
-  authPollDeadline = Date.now() + 6 * 60 * 1000;
-  authPollTimer = setInterval(async () => {
-    try {
-      const st = await api('/auth/status');
-      if (st.status === 'awaiting' && Date.now() > authPollDeadline) {
-        stopAuthPoll();
-        applyAuth({ status: 'need_login', reason: 'timeout' });
-        toast('Вхід не завершено за 6 хвилин — спробуй ще раз', true);
-        return;
-      }
-      if (!currentAuthState || st.status !== currentAuthState.status) {
-        if (st.status === 'authorized') toast('Доступ відкрито ✨');
-        applyAuth(st);
-      }
-    } catch (e) { /* app restarting */ }
-  }, 1500);
-}
-
+// ================= LAUNCH SPLASH =================
 const LAUNCH_T0 = performance.now();
 function revealApp() {
   const wait = Math.max(0, 780 - (performance.now() - LAUNCH_T0));
   setTimeout(() => {
-    document.body.classList.add('authed');
+    document.body.classList.add('booted');
     requestAnimationFrame(() => document.body.classList.add('ready'));
   }, wait);
 }
-
-function applyAuth(state) {
-  currentAuthState = state;
-  const isAuthed = state.enabled === false || state.status === 'authorized';
-  if (!isAuthed) document.body.classList.remove('authed');
-  else if (wasAuthed) document.body.classList.add('authed');
-  else revealApp();
-  paintAuthSettings(state);
-  if (isAuthed) {
-    stopAuthPoll();
-    renderUserBox(state.user);
-    if (!wasAuthed) {
-      wasAuthed = true;
-      boot();
-    }
-    return;
-  }
-  renderUserBox(null);
-  renderGate(state);
-  if (state.status === 'awaiting' || state.status === 'checking' || state.status === 'offline') startAuthPoll();
-  else stopAuthPoll();
-}
-
-async function checkAuthGate() {
-  try {
-    applyAuth(await api('/auth/status'));
-  } catch (e) {
-    applyAuth({ enabled: true, status: 'error', reason: e.message });
-  }
-}
-
-async function startTelegramLogin() {
-  try {
-    renderGate({ status: 'awaiting' });
-    const r = await api('/auth/login', { method: 'POST' });
-    if (r && r.status === 'authorized') { applyAuth(r); return; }
-    currentAuthState = { status: 'awaiting' };
-    stopAuthPoll();
-    startAuthPoll();
-  } catch (e) {
-    toast(t('Не вдалось почати вхід: {e}', { e: e.message }), true);
-    renderGate({ status: 'need_login' });
-  }
-}
-
-async function recheckAuth() {
-  try {
-    renderGate({ status: 'loading' });
-    const st = await api('/auth/recheck', { method: 'POST' });
-    applyAuth(st);
-    toast(st.status === 'authorized' ? 'Доступ підтверджено ✓' : 'Доступ не підтверджено', st.status !== 'authorized');
-  } catch (e) {
-    renderGate({ status: 'error', reason: e.message });
-  }
-}
-
-async function logoutTelegram() {
-  if (currentAuthState && currentAuthState.status === 'authorized' &&
-      !confirmDo('Вийти з акаунта Telegram? Шлюз перестане обслуговувати програми, доки не увійдеш знову.')) return;
-  stopAuthPoll();
-  try {
-    await api('/auth/logout', { method: 'POST' });
-    wasAuthed = false;
-    await checkAuthGate();
-  } catch (e) {
-    toast(t('Не вдалось вийти: {e}', { e: e.message }), true);
-  }
-}
-
-$('btnLogout').addEventListener('click', logoutTelegram);
-$('set-btn-recheck').addEventListener('click', recheckAuth);
-$('set-btn-login').addEventListener('click', startTelegramLogin);
-$('set-btn-logout').addEventListener('click', logoutTelegram);
-
-// Access can be revoked while the window is open (membership re-check every
-// 5 min on the backend): keep the UI in sync and lock it when that happens.
-setInterval(async () => {
-  if (!document.body.classList.contains('authed')) return;
-  try {
-    const st = await api('/auth/status');
-    if (st.status !== 'authorized') {
-      wasAuthed = false;
-      applyAuth(st);
-    } else {
-      currentAuthState = st;
-    }
-  } catch (e) { /* app restarting */ }
-}, 30000);
-window.addEventListener('focus', () => { if (document.body.classList.contains('authed')) checkAuthGate(); });
 
 // ---------- boot ----------
 function boot() {
@@ -3994,4 +3801,5 @@ $('homeLimRefresh').addEventListener('click', async () => {
   setTimeout(() => { b.disabled = false; b.classList.remove('spin'); }, 600);
 });
 
-checkAuthGate();
+boot();
+revealApp();

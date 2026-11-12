@@ -7,8 +7,8 @@
 web
 
 ## Users
-Members of the closed creators' community "Secret YT_cartel" (YouTube Cartel) — mostly
-non-technical people who use AI coding/chat tools (Claude Code, Codex, Cursor, Cline…).
+Anyone who downloads it (it started in the "Secret YT_cartel" / YouTube Cartel creators'
+community; there is no login) — mostly non-technical people who use AI coding/chat tools (Claude Code, Codex, Cursor, Cline…).
 They set CarteLink up once with a wizard and then open it rarely: to switch the model that
 answers, add or re-login an account, check limits, or see why a tool shows an error.
 The UI is used in Ukrainian by default and in 16 other languages (incl. RTL Arabic/Urdu).
@@ -21,8 +21,7 @@ the user's tools just work, and when something breaks the app says what and what
 
 ## Positioning
 One local address for every account the user already has, with model substitution rules
-("the tool asks for X, the gateway answers with Y") and account rotation — gated to the
-community through Telegram membership.
+("the tool asks for X, the gateway answers with Y") and account rotation — no login, it just runs.
 
 ## Operating Context
 - Windows desktop window (WebView2) plus tray; macOS window; a small always-on-top model
@@ -39,7 +38,7 @@ community through Telegram membership.
   no external network assets (fonts/icons must be local/inline). Talks to `/api/*`.
 - i18n: Ukrainian source strings in HTML/JS are the dictionary keys (`i18n/<lang>.js`);
   new or changed text needs translation into 16 languages.
-- Access gate overlay (`#gate`) until Telegram membership is confirmed.
+- Short launch splash (`#gate`) while the UI assembles; there is no login.
 
 ## Brand Commitments
 - Name **CarteLink** is binding (echoes "YouTube Cartel"). Logo and colours may change.

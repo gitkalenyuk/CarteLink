@@ -95,9 +95,6 @@ func (a *App) apiConfigSave(w http.ResponseWriter, r *http.Request) {
 	if fresh.Cliproxy.ManagementSecret == "" {
 		fresh.Cliproxy.ManagementSecret = prev.Cliproxy.ManagementSecret
 	}
-	// The session (login) and its verification time are owned by the auth
-	// flow, never by a UI save.
-	fresh.Auth = prev.Auth
 	// Window/switcher/language settings have their own endpoints; a config
 	// save from a page loaded earlier must not roll them back.
 	fresh.Desktop = prev.Desktop
