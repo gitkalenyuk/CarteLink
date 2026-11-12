@@ -267,6 +267,10 @@ func main() {
 
 	base := "http://" + config.DisplayHost(host) + ":" + strconv.Itoa(port)
 
+	// Current Antigravity client version before accounts register: Google
+	// hides newer models (Gemini 4) from old client versions.
+	cliproxy.StartAntigravityVersionUpdater(ctx)
+	log.Printf("antigravity client version: %s", cliproxy.AntigravityClientVersion())
 	emb := cliproxy.NewEmbedded(mount, root)
 	app.SetEmbedded(emb)
 	// Give the UI's Start/Stop/Restart buttons what they need to (re)run the
