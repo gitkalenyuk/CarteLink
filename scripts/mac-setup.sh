@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CarteLink — macOS setup: dependencies, build, vet, tests.
+# CarteLink 3 — macOS setup: dependencies, checks, a local build.
 # Usage: bash scripts/mac-setup.sh [--run]
 # For a distributable CarteLink.app + .dmg use scripts/build-mac-app.sh.
 set -euo pipefail
@@ -14,30 +14,29 @@ fi
 need go   || brew install go
 need node || brew install node
 need git  || brew install git
-
-echo "== go version"; go version
-
-# The native window (WKWebView) needs cgo = Xcode Command Line Tools. Without
-# them the build still works but opens the UI in the default browser.
-CGO=0
-if xcode-select -p >/dev/null 2>&1; then
-  CGO=1
-else
-  echo "(!) Xcode Command Line Tools не знайдено — збираю без нативного вікна (UI відкриється в браузері)."
-  echo "    Встанови їх:  xcode-select --install"
+if ! need cargo; then
+  echo "Rust не знайдено — встановлюю rustup (https://rustup.rs)…"
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+  # shellcheck disable=SC1091
+  source "$HOME/.cargo/env"
+fi
+if ! xcode-select -p >/dev/null 2>&1; then
+  echo "Потрібні Xcode Command Line Tools: виконай  xcode-select --install  і запусти скрипт ще раз." >&2
+  exit 1
 fi
 
-echo "== build (CGO_ENABLED=$CGO)"
-CGO_ENABLED=$CGO go build -trimpath -ldflags "-s -w" -o cartelink .
+echo "== versions"; go version; cargo --version
 
-echo "== vet"
-go vet . ./internal/...
-
-echo "== tests"
-go test . ./internal/...
+echo "== tests + lint"
+cargo test
+cargo clippy -- -D warnings
 
 echo "== js syntax"
-for f in internal/web/ui/*.js; do node --check "$f"; done
+for f in ui/js/*.js ui/js/pages/*.js ui/js/data/*.js ui/*.js; do node --check "$f"; done
+
+echo "== build"
+cargo build --release
+cp target/release/cartelink ./cartelink
 
 echo
 echo "Готово: ./cartelink  (UI: http://127.0.0.1:8317/ui/, дані: ~/Library/Application Support/CarteLink)"

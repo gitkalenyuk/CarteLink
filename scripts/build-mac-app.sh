@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# CarteLink — macOS release build with the native WKWebView window. Each
-# architecture is compiled once; the binaries are then packaged three ways:
+# CarteLink 3 — macOS release build (WKWebView window, menu-bar icon). Each
+# architecture is compiled once (build.rs also compiles the Go engine for that
+# architecture and embeds it); the binaries are packaged three ways:
 #   dist/CarteLink-<ver>.dmg               universal (Apple Silicon + Intel)
-#   dist/CarteLink-<ver>-apple-silicon.dmg arm64 only (M1…M5), half the size
+#   dist/CarteLink-<ver>-apple-silicon.dmg arm64 only, half the size
 #   dist/CarteLink-<ver>-intel.dmg         x86_64 only
-# dist/CarteLink.app is the universal bundle (for a quick local run/install).
+# dist/CarteLink.app is the universal bundle.
 #
-# Needs: Go ≥ 1.27, Xcode Command Line Tools (xcode-select --install).
+# Needs: Rust (rustup), Go ≥ 1.27, Xcode Command Line Tools (xcode-select --install).
 # Usage: bash scripts/build-mac-app.sh            → all three .dmg
 #        ARCH=arm64 bash scripts/build-mac-app.sh → one architecture only (faster)
 set -euo pipefail
@@ -17,29 +18,29 @@ if ! xcode-select -p >/dev/null 2>&1; then
   exit 1
 fi
 
-VERSION=$(sed -n 's/^const Version = "\(.*\)"/\1/p' internal/config/config.go)
+VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 APP=dist/CarteLink.app
 ARCHS=${ARCH:-"arm64 amd64"}
-# Go 1.27 itself targets macOS 13 (its linker stamps go.o with 13.0). The cgo
-# objects need the same target in CGO_CFLAGS/CGO_LDFLAGS: unlike
-# MACOSX_DEPLOYMENT_TARGET these are part of Go's build-cache key, so objects
-# cached from a plain `go build` (built for the host macOS) are not reused.
 MINOS=13.0
+export MACOSX_DEPLOYMENT_TARGET=$MINOS
+export CGO_CFLAGS="-O2 -mmacosx-version-min=$MINOS"
+export CGO_LDFLAGS="-mmacosx-version-min=$MINOS"
 
 label() { case $1 in arm64) echo apple-silicon ;; amd64) echo intel ;; *) echo "$1" ;; esac; }
+triple() { case $1 in arm64) echo aarch64-apple-darwin ;; amd64) echo x86_64-apple-darwin ;; esac; }
 
 echo "== CarteLink ${VERSION}: tests"
-go vet . ./internal/...
-go test . ./internal/...
+cargo test --release
 
 rm -rf dist && mkdir -p dist
 
 echo "== build (${ARCHS})"
 BINS=()
 for a in $ARCHS; do
-  CGO_ENABLED=1 GOOS=darwin GOARCH=$a MACOSX_DEPLOYMENT_TARGET=$MINOS \
-    CGO_CFLAGS="-O2 -g -mmacosx-version-min=$MINOS" CGO_LDFLAGS="-mmacosx-version-min=$MINOS" \
-    go build -trimpath -ldflags "-s -w" -o "dist/cartelink-$a" .
+  t=$(triple "$a")
+  rustup target add "$t" >/dev/null
+  cargo build --release --target "$t"
+  cp "target/$t/release/cartelink" "dist/cartelink-$a"
   BINS+=("dist/cartelink-$a")
 done
 
@@ -88,8 +89,8 @@ make_app() {
 </dict>
 </plist>
 PLIST
-  # Ad-hoc signature: required on Apple Silicon, lets Gatekeeper show the usual
-  # "unidentified developer" prompt (right-click → Open) instead of "damaged".
+  # Ad-hoc signature: required on Apple Silicon; Gatekeeper then shows the
+  # usual "unidentified developer" prompt (right-click → Open).
   codesign --force --deep --sign - "$app"
 }
 

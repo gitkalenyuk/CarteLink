@@ -34,7 +34,7 @@ One local address for every account the user already has, with model substitutio
 - Pages: Home, Connect an app (per-tool instructions), Accounts (OAuth + plugin accounts,
   per-account model lists), Models (tiers / table, exact swaps), Providers (API-key
   providers, native keys), Statistics (tokens, limits, error log), Settings, Help.
-- Static UI embedded in the Go binary (`internal/web/ui`): plain HTML/CSS/JS, no build step,
+- Static UI embedded in the Rust binary (`ui/`): plain HTML/CSS/JS, no build step,
   no external network assets (fonts/icons must be local/inline). Talks to `/api/*`.
 - i18n: Ukrainian source strings in HTML/JS are the dictionary keys (`i18n/<lang>.js`);
   new or changed text needs translation into 16 languages.
@@ -42,10 +42,13 @@ One local address for every account the user already has, with model substitutio
 
 ## Brand Commitments
 - Name **CarteLink** is binding (echoes "YouTube Cartel"). Logo and colours may change.
-- Visual direction chosen by the user (2026-09-30, after two re-rolls): the category
-  standard — a dark, calm desktop admin console, executed at the craft level of Linear,
-  Vercel Dashboard, Raycast and Stripe Dashboard, with smooth purposeful motion
-  (launch sequence, page transitions, staggered reveal, skeletons, micro-interactions).
+- Visual direction (3.0, 2026-11-16): the user rejected the single dark-console look of
+  2.x ("AI slop") and chose **many worlds instead of one**: Graphite (dark developer
+  console, default) and Datamatics (pure black/white data field) first, plus eight
+  more (Departures split-flap board, Aurora, Paper, Synthwave, Phosphor, Nord, Sunset,
+  Swiss) and a custom theme editor. Themes only redefine tokens; components stay one
+  system. Every block and menu item is user-arrangeable (move, resize, hide), and any
+  interface element can be switched off. Motion stays purposeful and modern.
 
 ## Evidence on Hand
 Real live data from the local engine (accounts, models, metrics, errors). No testimonials,

@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CarteLink</title>
+<script>
+// Theme and look before the first paint, so the window never flashes.
+try {
+  var p = JSON.parse(localStorage.getItem('cl.look') || '{}');
+  if (p.theme && p.theme !== 'graphite') document.documentElement.setAttribute('data-theme', p.theme);
+  if (p.vars) for (var k in p.vars) document.documentElement.style.setProperty(k, p.vars[k]);
+} catch (e) {}
+</script>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="css/app.css?v=3.0.0">
+<link rel="stylesheet" href="css/themes.css?v=3.0.0">
+<link rel="stylesheet" href="css/designs/graphite.css?v=3.0.0">
+<link rel="stylesheet" href="css/designs/datamatics.css?v=3.0.0">
+<link rel="stylesheet" href="css/designs/departures.css?v=3.0.0">
+<link rel="stylesheet" href="css/designs/transit.css?v=3.0.0">
+<link rel="stylesheet" href="css/designs/wayfinding.css?v=3.0.0">
+<link rel="stylesheet" href="css/designs/dense.css?v=3.0.0">
+<link rel="stylesheet" href="css/designs/tiles.css?v=3.0.0">
+<link rel="stylesheet" href="css/designs/pulsar.css?v=3.0.0">
+<link rel="stylesheet" href="css/designs/atlas.css?v=3.0.0">
+<link rel="stylesheet" href="css/designs/boarding.css?v=3.0.0">
+<link rel="stylesheet" href="css/designs/cassette.css?v=3.0.0">
+<link rel="stylesheet" href="css/designs/spectrum.css?v=3.0.0">
+<link rel="stylesheet" href="css/designs/darkroom.css?v=3.0.0">
+<link rel="stylesheet" href="css/designs/warm.css?v=3.0.0">
+<script src="js/i18n.js?v=3.0.0"></script>
+</head>
+<body>
+<!--
+THESIS: CarteLink is a switchboard you arrange yourself. One shell, ten worlds (Graphite default, Datamatics, Departures, Aurora, Paper, Synthwave, Phosphor, Nord, Sunset, Swiss) plus a custom one; every block on every page can be moved, resized or hidden. Refuses a fixed one-look admin template.
+OWN-WORLD: tokens only (app.css :root + themes.css); components never change per theme; world touches: Datamatics barcode field, Departures split-flap model, Aurora light, Synthwave horizon, Phosphor scanlines.
+STORY: the user sees at once which model answers, whether accounts are alive, what traffic flows; switches the model in one click; cleans dead accounts in bulk; arranges the console their way.
+FIRST VIEWPORT: Overview: now-model with switch and presets, gateway state with address and key, live request feed, account health, KPIs, activity chart.
+FORM: user-chosen themes (Graphite, Datamatics + 8); seed key 14bfb66e.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+-->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></symbol>
+  <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="m5.3 5.3 13.4 13.4"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5V21h16v-4"/></symbol>
+  <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V16h8v-1.3A7 7 0 0 0 12 2z"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7.5 16v-5"/><path d="M12 16V7.5"/><path d="M16.5 16v-3"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M12 6.5V12l3.5 2"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></symbol>
+  <symbol id="i-coins" viewBox="0 0 24 24"><circle cx="9" cy="9" r="6"/><path d="M15.4 9.4a6 6 0 1 1-6 6"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24"><path d="M4 22V4"/><path d="M4 4h13l-2.5 4.5L17 13H4"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="m12 14 4-4"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M2.5 12h19"/><path d="M12 2.5a14.5 14.5 0 0 1 0 19 14.5 14.5 0 0 1 0-19z"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M9.2 9.2a2.9 2.9 0 0 1 5.6 1c0 1.9-2.8 2.6-2.8 2.6"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.3-9.3"/><path d="m16 7 3 3"/><path d="m18.5 4.5 2 2"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></symbol>
+  <symbol id="i-login" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></symbol>
+  <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 2.5a9.5 9.5 0 1 0 0 19c1.4 0 2-1 2-2 0-1.6-1-2 0-3.2.8-1 2.300-.8 3.800-.8A3.700 3.700 0 0 0 21.500 11.800C21.500 6.500 17.200 2.500 12 2.500z"/><path d="M7.500 12h.01"/><path d="M9.500 7.500h.01"/><path d="M14.500 7h.01"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14"/><path d="M16 5v14"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 2v5"/><path d="M15 2v5"/><path d="M6 7h12v4a6 6 0 0 1-12 0z"/><path d="M12 17v5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></symbol>
+  <symbol id="i-puzzle" viewBox="0 0 24 24"><path d="M10 3a2 2 0 0 1 4 0v2h4a1 1 0 0 1 1 1v4h2a2 2 0 0 1 0 4h-2v5a1 1 0 0 1-1 1h-4v-2a2 2 0 0 0-4 0v2H6a1 1 0 0 1-1-1v-4H3a2 2 0 0 1 0-4h2V6a1 1 0 0 1 1-1h4z"/></symbol>
+  <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/></symbol>
+  <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H15a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h6.5"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M1 14h6"/><path d="M9 8h6"/><path d="M17 16h6"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-window" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><rect x="12" y="10" width="7" height="5" rx="1"/><path d="M8 21h8"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3.2-3.2a4.5 4.5 0 0 0-6.4-6.4l-1.1 1.1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3.2 3.2a4.5 4.5 0 0 0 6.4 6.4l1.1-1.1"/></symbol>
+  <symbol id="i-grip" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></symbol>
+  <symbol id="i-layout" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></symbol>
+  <symbol id="i-eyeoff" viewBox="0 0 24 24"><path d="M9.9 4.2A10 10 0 0 1 12 4c6.4 0 10 8 10 8a17 17 0 0 1-2.2 3.2"/><path d="M6.6 6.6A17 17 0 0 0 2 12s3.6 8 10 8a9.7 9.7 0 0 0 5.4-1.6"/><path d="M14.1 14.1a3 3 0 0 1-4.2-4.2"/><path d="m2 2 20 20"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-5-6-5"/><path d="M12 19h8"/></symbol>
+  <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></symbol>
+  <symbol id="i-wand" viewBox="0 0 24 24"><path d="m15 4 5 5"/><path d="M3 21 16.5 7.5"/><path d="M19 3v2M22 6h-2M8 3v1M4 7H3"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 21V9"/><path d="m7 14 5-5 5 5"/><path d="M5 3h14"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+  <symbol id="i-radio" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.5"/><path d="M7.8 16.2a6 6 0 0 1 0-8.5"/><path d="M19 5a10 10 0 0 1 0 14"/><path d="M5 19A10 10 0 0 1 5 5"/></symbol>
+  <symbol id="i-broom" viewBox="0 0 24 24"><path d="m13 11 8-8"/><path d="M9.5 12.5 6 22h3l1.5-3 1.5 3h3l-1-8.5"/><path d="M7 12h9"/></symbol>
+  <symbol id="i-maximize" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-restore" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
+</svg>
+
+<div id="fx" aria-hidden="true"></div>
+
+<div id="boot" role="status">
+  <div>
+    <div class="boot-mark"><svg viewBox="0 0 24 24"><use href="#i-link"/></svg></div>
+    <div class="boot-name">CarteLink</div>
+  </div>
+</div>
+
+<div class="app">
+  <aside class="side" aria-label="Навігація">
+    <div class="brand">
+      <div class="brand-mark"><svg viewBox="0 0 24 24"><use href="#i-link"/></svg></div>
+      <div class="brand-text">
+        <div class="brand-name">CarteLink</div>
+        <div class="brand-sub">by YouTube Cartel</div>
+      </div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="side-foot">
+      <span class="grow" id="sideVersion">v3.0.0</span>
+      <button class="btn ghost sm icon" id="navCompact" data-tip="Згорнути меню"><svg class="i"><use href="#i-sidebar"/></svg></button>
+    </div>
+  </aside>
+  <div class="main">
+    <header class="topbar">
+      <button class="btn ghost icon hidden" id="navToggle" aria-label="Меню"><svg class="i"><use href="#i-menu"/></svg></button>
+      <div class="grow">
+        <h1 class="top-title" id="pageTitle">CarteLink</h1>
+      </div>
+      <button class="pill" id="statusPill" style="cursor:pointer"><span class="dot off" id="statusDot"></span><span id="statusText">запуск…</span></button>
+      <button class="btn ghost sm" id="cmdkBtn" data-tip="Швидкий пошук і команди"><svg class="i sm"><use href="#i-search"/></svg><kbd>Ctrl K</kbd></button>
+      <button class="btn ghost sm icon" id="editBtn" data-tip="Налаштувати вигляд: перетягнути, сховати, змінити ширину"><svg class="i"><use href="#i-layout"/></svg></button>
+    </header>
+    <main class="view" id="view"><div class="view-inner" id="viewInner"></div></main>
+  </div>
+</div>
+<div id="toasts" aria-live="polite"></div>
+
+<script src="js/data/presets.js?v=3.0.0"></script>
+<script src="js/data/clients.js?v=3.0.0"></script>
+<script src="js/data/prices.js?v=3.0.0"></script>
+<script src="js/core.js?v=3.0.0"></script>
+<script src="js/design.js?v=3.0.0"></script>
+<script src="js/designs/graphite.js?v=3.0.0"></script>
+<script src="js/designs/datamatics.js?v=3.0.0"></script>
+<script src="js/designs/departures.js?v=3.0.0"></script>
+<script src="js/designs/transit.js?v=3.0.0"></script>
+<script src="js/designs/wayfinding.js?v=3.0.0"></script>
+<script src="js/designs/dense.js?v=3.0.0"></script>
+<script src="js/designs/tiles.js?v=3.0.0"></script>
+<script src="js/designs/pulsar.js?v=3.0.0"></script>
+<script src="js/designs/atlas.js?v=3.0.0"></script>
+<script src="js/designs/boarding.js?v=3.0.0"></script>
+<script src="js/designs/cassette.js?v=3.0.0"></script>
+<script src="js/designs/spectrum.js?v=3.0.0"></script>
+<script src="js/designs/darkroom.js?v=3.0.0"></script>
+<script src="js/designs/warm.js?v=3.0.0"></script>
+<script src="js/look.js?v=3.0.0"></script>
+<script src="js/data.js?v=3.0.0"></script>
+<script src="js/pages/home.js?v=3.0.0"></script>
+<script src="js/pages/models.js?v=3.0.0"></script>
+<script src="js/pages/accounts.js?v=3.0.0"></script>
+<script src="js/pages/keys.js?v=3.0.0"></script>
+<script src="js/pages/stats.js?v=3.0.0"></script>
+<script src="js/pages/inspector.js?v=3.0.0"></script>
+<script src="js/pages/connect.js?v=3.0.0"></script>
+<script src="js/pages/providers.js?v=3.0.0"></script>
+<script src="js/pages/plugins.js?v=3.0.0"></script>
+<script src="js/pages/prompt.js?v=3.0.0"></script>
+<script src="js/pages/settings.js?v=3.0.0"></script>
+<script src="js/pages/help.js?v=3.0.0"></script>
+<script src="js/shell.js?v=3.0.0"></script>
+</body>
+</html>

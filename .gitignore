@@ -21,3 +21,6 @@ tools/
 *.png
 !build/*.png
 .impeccable/questions/
+
+# Rust build output
+/target/

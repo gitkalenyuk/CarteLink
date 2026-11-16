@@ -1,0 +1,78 @@
+/* Datamatics design — pure black and white data field. */
+/* ── Datamatics: pure black and white, data as the only ornament. States keep
+   their meaning through glyphs and labels, colour is never required. */
+html[data-theme="datamatics"] {
+  --bg: #000; --bg-2: #000; --surface: #000; --surface-2: #0b0b0b; --surface-3: #161616;
+  --line: #2a2a2a; --line-strong: #fff; --text: #fff; --text-2: #c8c8c8; --text-3: #8f8f8f;
+  --accent: #fff; --accent-2: #fff; --accent-ink: #000; --accent-soft: rgba(255, 255, 255, 0.1);
+  --ok: #fff; --warn: #c8c8c8; --bad: #fff; --info: #fff;
+  --ok-soft: rgba(255, 255, 255, 0.08); --warn-soft: rgba(255, 255, 255, 0.05); --bad-soft: rgba(255, 255, 255, 0.16); --info-soft: rgba(255, 255, 255, 0.06);
+  --chart-ok: #fff; --chart-bad: repeating-linear-gradient(0deg, #fff 0 1px, #000 1px 3px);
+  --font: "Cascadia Mono", "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --font-display: "Cascadia Mono", "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --fw-display: 600; --track-display: -0.01em; --caps: uppercase;
+  --radius: 0px; --radius-sm: 0px; --radius-lg: 0px; --shadow: none; --shadow-pop: 0 0 0 1px #fff;
+  --fs: 12.5px;
+}
+html[data-theme="datamatics"] .card, html[data-theme="datamatics"] .kpi { border-color: #fff; }
+html[data-theme="datamatics"] .chip { border: 1px solid #fff; background: #000; color: #fff; }
+html[data-theme="datamatics"] .chip.bad { background: #fff; color: #000; }
+html[data-theme="datamatics"] .chip.warn { border-style: dashed; }
+html[data-theme="datamatics"] .bar.bad > i, html[data-theme="datamatics"] .segbar > i.bad, html[data-theme="datamatics"] .segbar > i.invalid { background: repeating-linear-gradient(90deg, #fff 0 2px, #000 2px 4px); }
+html[data-theme="datamatics"] .bar.warn > i, html[data-theme="datamatics"] .segbar > i.limited, html[data-theme="datamatics"] .segbar > i.warn { background: repeating-linear-gradient(90deg, #fff 0 1px, #000 1px 3px); }
+html[data-theme="datamatics"] .chart .col i.b { background: repeating-linear-gradient(0deg, #fff 0 1px, #000 1px 3px); }
+html[data-theme="datamatics"] .btn.primary:hover { background: #000; color: #fff; border-color: #fff; }
+html[data-theme="datamatics"] .nav-item.active { background: #fff; color: #000; }
+html[data-theme="datamatics"] .nav-item.active::before { display: none; }
+html[data-theme="datamatics"] .dot.ok { box-shadow: none; animation: blink 1.2s steps(2) infinite; }
+html[data-theme="datamatics"] .brand-mark { box-shadow: none; }
+@keyframes blink { 50% { opacity: 0.2; } }
+
+
+/* ── composition ── */
+html[data-theme="datamatics"] .card-h h2 { text-transform: uppercase; letter-spacing: 0.08em; font-size: 11px; }
+.dm-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #fff; font: 600 11px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
+.dm-code { padding: 2px 5px; background: #fff; color: #000; }
+.dm-title { margin: 6px 0 18px; font: 700 clamp(38px, 6vw, 92px)/0.9 var(--font-display); letter-spacing: -0.045em; text-transform: uppercase; word-break: break-all; }
+.dm-title span { display: block; animation: dmIn calc(500ms * var(--t)) steps(6) backwards; }
+.dm-title span:nth-child(2) { animation-delay: calc(80ms * var(--t)); }
+.dm-title span:nth-child(3) { animation-delay: calc(160ms * var(--t)); }
+.dm-title span:nth-child(4) { animation-delay: calc(240ms * var(--t)); }
+@keyframes dmIn { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+.dm-hero-foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.dm-pick { flex: 1 1 240px; max-width: 380px; }
+.dm-base { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.dm-big { display: flex; align-items: baseline; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.dm-big b { font: 600 clamp(28px, 3vw, 44px)/1 var(--font-display); letter-spacing: -0.03em; }
+.dm-big span { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-2); }
+.dm-sline { margin-top: 12px; font-size: 11px; letter-spacing: 0.1em; }
+.dm-wave { position: relative; height: 120px; display: grid; grid-template-rows: 1fr 34px; gap: 2px; }
+.dm-code-bars { display: flex; align-items: flex-end; gap: 3px; height: 100%; }
+.dm-code-bars i { flex: 1; height: calc(4% + var(--v) * 96%); background: #fff; transform-origin: bottom; animation: dmBar calc(600ms * var(--t)) var(--ease) backwards; }
+.dm-code-bars.neg { align-items: flex-start; }
+.dm-code-bars.neg i { height: calc(var(--v) * 100%); background: repeating-linear-gradient(0deg, #fff 0 1px, transparent 1px 3px); transform-origin: top; }
+@keyframes dmBar { from { transform: scaleY(0); } }
+.dm-axis { display: flex; justify-content: space-between; margin-top: 6px; font-size: 10px; letter-spacing: 0.12em; color: var(--text-3); }
+.dm-rows { display: grid; }
+.dm-row { display: grid; grid-template-columns: 26px minmax(0, 1fr) 30% 52px; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font: 12px/1.2 var(--font-mono); }
+.dm-row.s { grid-template-columns: 18px minmax(0, 1fr) minmax(0, 1fr) 44px; }
+.dm-row.h { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr) 44px; }
+.dm-n { color: var(--text-3); }
+.dm-pbar { height: 8px; border: 1px solid #fff; }
+.dm-pbar i { display: block; height: 100%; background: #fff; transform-origin: left; transition: transform var(--dur-slow) var(--ease); }
+.dm-tag { justify-self: end; padding: 1px 4px; border: 1px solid #fff; font-size: 10px; letter-spacing: 0.08em; }
+.dm-tag.on { background: #fff; color: #000; }
+.dm-cells { display: flex; flex-wrap: wrap; gap: 3px; }
+.dm-cells i { width: 9px; height: 9px; border: 1px solid #fff; }
+.dm-cells i.ok, .dm-cells i.warn { background: #fff; }
+.dm-cells i.limited { background: repeating-linear-gradient(90deg, #fff 0 1px, transparent 1px 3px); }
+.dm-cells i.error, .dm-cells i.invalid { background: repeating-linear-gradient(45deg, #fff 0 1px, transparent 1px 3px); }
+.dm-empty { padding: 12px 0; color: var(--text-3); text-transform: uppercase; font-size: 11px; letter-spacing: 0.08em; }
+.th-dm { height: 100%; padding: 10px; display: flex; flex-direction: column; gap: 4px; background: #000; }
+.th-dm b { height: 12px; width: 75%; background: #fff; }
+.th-dm b + b { width: 50%; }
+.th-dm em { margin-top: auto; display: flex; align-items: flex-end; gap: 2px; height: 34px; }
+.th-dm em i { flex: 1; background: #fff; height: 40%; }
+.th-dm em i:nth-child(3n) { height: 90%; }
+.th-dm em i:nth-child(5n+1) { height: 65%; }
+.th-dm em i:nth-child(7n) { height: 20%; }

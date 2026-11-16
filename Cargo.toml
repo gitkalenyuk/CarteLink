@@ -1,0 +1,74 @@
+[package]
+name = "cartelink"
+version = "3.0.0"
+edition = "2024"
+rust-version = "1.90"
+description = "CarteLink — local AI gateway (YouTube Cartel)"
+license = "MIT"
+publish = false
+build = "build.rs"
+
+[[bin]]
+name = "cartelink"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "net", "time", "sync", "process", "io-util", "fs", "signal"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "query"] }
+hyper = { version = "1", features = ["http1", "client", "server"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
+http-body-util = "0.1"
+bytes = "1"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "http2"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde_norway = "0.9"
+jiff = "1"
+arc-swap = "1"
+getrandom = "0.4"
+hex = "0.4"
+regex = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std", "ansi"] }
+dirs = "7"
+zstd = { version = "0.14", default-features = false }
+include_dir = "0.7"
+mime_guess = "2"
+url = "2"
+percent-encoding = "2"
+toml_edit = "0.25"
+zip = { version = "9", default-features = false, features = ["deflate"] }
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+tao = "0.37"
+wry = "0.57"
+tray-icon = "0.26"
+notify-rust = "4"
+
+[target.'cfg(windows)'.dependencies]
+windows-registry = "0.100"
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+    "Win32_System_Console",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Graphics_Dwm",
+    "Win32_Security",
+] }
+
+[build-dependencies]
+zstd = { version = "0.14", default-features = false }
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

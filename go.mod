@@ -6,12 +6,8 @@ replace github.com/router-for-me/CLIProxyAPI/v7 => ./third_party/CLIProxyAPI
 
 require (
 	github.com/gin-gonic/gin v1.10.1
-	github.com/jchv/go-webview2 v0.0.0-20260205173254-56598839c808
 	github.com/router-for-me/CLIProxyAPI/v7 v7.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.3
-	github.com/webview/webview_go v0.0.0-20240831120633-6173450d4dd6
-	golang.org/x/sys v0.47.0
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -32,7 +28,6 @@ require (
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
-	github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.17.4 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
@@ -77,8 +72,10 @@ require (
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/protobuf v1.34.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

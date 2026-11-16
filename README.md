@@ -1,116 +1,95 @@
 # CarteLink
 
-**Локальний AI-шлюз від YouTube Cartel.** Один процес, один порт, одне вікно.
+**Локальний AI-шлюз від YouTube Cartel.** Один файл, один порт, одне вікно.
 
-Збирає твої акаунти й ключі (Google Antigravity, OpenAI Codex, Kimi, Claude, xAI,
-Meta + 70 OpenAI-сумісних API: OpenRouter, Groq, DeepSeek, Ollama…) в одну адресу
-`http://127.0.0.1:8317` з ротацією акаунтів, підміною моделей і чорним списком.
-Claude Code, Codex, Cursor, Cline, Aider і ще ~20 програм підключаються за готовими
-інструкціями зі сторінки «Підключити програму».
+Збирає твої акаунти й ключі (Google Antigravity, OpenAI Codex, Claude, Kimi, xAI, Meta,
+плагіни Kiro / Copilot / Cursor / WorkBuddy… + 70 OpenAI-сумісних API: OpenRouter, Groq,
+DeepSeek, Ollama…) в одну адресу `http://127.0.0.1:8317` з ротацією акаунтів, підміною
+моделей і чорним списком. Claude Code, Codex, Cursor, Cline, Aider і ще ~20 програм
+підключаються за готовими інструкціями. Вхід не потрібен: запустив — і працює.
 
-Вхід не потрібен: запустив — і працює.
+## Architecture (3.0)
 
-The original [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) source code is
-compiled directly into this binary — the engine IS the server. The CarteLink UI is
-mounted on the same Gin engine; Windows gets a WebView2 window with a tray icon, macOS
-(cgo build) a native WKWebView window.
+CarteLink 3 is written in **Rust** (edition 2024): tokio + axum + hyper for the gateway,
+wry + tao + tray-icon for the native window (WebView2 on Windows, WKWebView on macOS).
 
-## What's inside
+The original [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) engine (Go, MIT)
+is **compiled into the same executable**: `build.rs` builds `enginehost/` (a ~300-line
+Go host around the unmodified `third_party/CLIProxyAPI`) for the target, compresses it
+with zstd and embeds it. At start the engine is written to `data/bin/` (once per build)
+and supervised as a hidden child process on a private loopback port:
+
+```
+programs ──▶ CarteLink (Rust, :8317)                 ──▶ engine (Go, 127.0.0.1:<random>)
+             · local-only gate, pause                     · OAuth accounts, plugins,
+             · client keys (full + scoped)                  format translation, rotation
+             · model mapping, blacklist, prompt, thinking   · accepts only CarteLink's
+             · /v1/models, live events, statistics            internal key
+             · UI + control API (/ui, /api)
+```
+
+The engine dies with the app (stdin pipe + Windows Job Object) and is restarted with
+backoff if it ever exits on its own.
 
 | Path | What it is |
 |---|---|
-| `third_party/CLIProxyAPI/` | The full CLIProxyAPI source (unmodified, MIT) |
-| `internal/cliproxy/embedded.go` | SDK embedding: `NewBuilder()…Build()` + `Run(ctx)`, `config.yaml` sync |
-| `internal/desktop/` | Native window + tray (Windows), WKWebView (macOS), autostart (all OS) |
-| `internal/instance/` | Single instance: a second launch shows the running window |
-| `internal/web/` | CarteLink UI (embedded assets) + control API |
-| `internal/web/ui/presets.js` | 70+ provider presets for the Providers page |
-| `internal/web/ui/clients.js` | ~24 client apps with setup instructions |
-| `routing.go` | Model mapping (tiers / table / smart fallback) |
-| `main.go` | Wiring: config → window or console + embedded service, gateway middleware |
+| `src/main.rs` | Start-up: single instance, config, logging, port, engine, window or headless |
+| `src/proxy.rs` | The gateway: gates, key checks, body rewrite, streaming pass-through, WebSocket upgrade |
+| `src/routing.rs` | Model mapping (tiers / table / smart fallback) |
+| `src/scoped.rs` | Client keys: full-access and scoped (`cl-api-…`) |
+| `src/prompting.rs` | System prompt / AGENT.md injection, reasoning (thinking) settings |
+| `src/engine.rs` | Embedded engine: extraction, config.yaml sync, supervision |
+| `src/api.rs` | Control API `/api/*` (config, accounts, keys, switcher, metrics, events…) |
+| `src/limits.rs` | Account states and limits (incl. "sign-in rejected") |
+| `src/metrics.rs`, `src/errlog.rs` | Statistics (hourly, 31 days) and the error log |
+| `src/gui.rs` | Window, tray, floating switcher (Windows + macOS) |
+| `enginehost/main.go` | Go host of the engine (+ model catalog/Antigravity updaters, `/_cartelink/caps`) |
+| `ui/` | The UI: `index.html`, `css/`, `js/core.js` (shared API), `js/look.js` (themes, layout editing), `js/pages/*`, `i18n/` |
 
 ## Run
 
-Windows: `CarteLink.exe`. macOS: `CarteLink.app` (see *Building for macOS*).
+Windows: `CarteLink.exe`. macOS: `CarteLink.app`.
 
-- The window opens by itself (`/ui/`). Closing it hides CarteLink to the tray
-  (Windows; switchable in Налаштування) — the gateway keeps running. Quit: tray → «Вийти».
-- «Налаштування → Запускати разом із системою» adds a per-user login item
-  (Windows `HKCU\…\Run`, macOS LaunchAgent, Linux XDG autostart); it starts minimized.
-- Only one copy runs: launching it again brings the existing window up.
-- The port is fixed (8317). If another program holds it, CarteLink uses the next free
-  port **for this run only** and shows a banner; it is never saved.
-- `--headless` runs server-only (no window); `--port N` overrides the port for this run;
-  `--minimized` starts hidden in the tray (used by autostart).
+- The window opens by itself. Closing it hides CarteLink to the tray (Windows and macOS menu
+  bar; switchable in Налаштування). Quit: tray → «Вийти».
+- Only one copy runs; launching it again brings the window up.
+- The port is fixed (8317). If it is busy, CarteLink uses the next free port **for this run
+  only** and shows a banner.
+- `--headless` (server only), `--port N` (this run only), `--minimized` (start in the tray).
+- Development: `CARTELINK_UI_DIR=<repo>/ui` serves the UI from disk (edit + reload, no rebuild).
 
-## Models
+## Data
 
-«Моделі» has two modes:
+`CARTELINK_HOME` moves the whole data dir. Default: `%AppData%\CarteLink` (Windows),
+`~/Library/Application Support/CarteLink` (macOS). 2.x data is used as is.
 
-- **Рівні** (default): Claude Code's Haiku/Sonnet/Opus (any `claude-*` name containing the
-  tier word) + universal tiers for every other app, selected by exact alias —
-  `cartelink-fast`, `cartelink-main`, `cartelink-max` (legacy `cursor-small`,
-  `codex-mini`, `cascade-*`… still work). Optional exact swaps for official Claude names.
-- **Таблиця**: an explicit «client model → real model» list; keys may end with `*`.
+- `config.json` — gateway settings, routing, keys, UI look and layout (`ui`)
+- `data/cliproxy/config.yaml` — engine config (managed keys rewritten, the rest kept; `.bak` copy)
+- `data/cliproxy/auths/` — accounts; `data/cliproxy/plugins/` — engine plugins
+- `data/cliproxy/logs/app.log` — app + engine log, rotates at 5 MB
+- `data/metrics.json`, `data/errors.jsonl`, `data/account-health.json`
+- `data/bin/` — the extracted engine; `data/webview/` — the window's browser profile
 
-Matching is exact or explicit prefix only (2.2.0 used substrings, so e.g. every `gemini-*`
-request was caught by the `mini` rule). Unknown models: **smart** (default — a model the
-engine does not serve goes to the default model), passthrough, or always-default.
-`/v1/models` lists only models that really work (served models, provider models, set aliases).
+## Build
 
-## Config
-
-`CARTELINK_HOME` (legacy `CARTELGATE_HOME` / `VISIONGATE_HOME`) moves the whole data dir.
-Default: `%AppData%\CarteLink` (Windows), `~/Library/Application Support/CarteLink` (macOS).
-On first start the previous product's directory (`CartelGate`, `VisionGateGo`) is copied
-over (auths and settings; logs, browser caches and Electron-era leftovers are skipped).
-
-- `config.json` — gateway settings (key, routing, blacklist, window prefs, session)
-- `data/cliproxy/config.yaml` — the engine config (managed keys rewritten, management edits kept)
-- `data/cliproxy/logs/app.log` — app + engine log in GUI mode, rotates at 5 MB
-- `data/metrics.json` — persistent usage statistics
-- `instance.json` — pid/port of the running copy (single instance)
-
-## Building for Windows
+Needs Rust (stable, ≥ 1.90) and Go (see `go.mod`).
 
 ```
-go build -trimpath -ldflags "-s -w -H=windowsgui" -o CarteLink.exe .
+cargo build --release
 ```
 
-The icon lives in `build/icon.ico` and is embedded via `rsrc_windows_amd64.syso`
-(regenerate: `rsrc -ico build/icon.ico -o rsrc_windows_amd64.syso`).
+Windows output: `target/release/cartelink.exe` (icon and version info embedded). macOS:
+`bash scripts/build-mac-app.sh` → `dist/CarteLink.app` + three `.dmg` (universal, Apple
+Silicon, Intel). `CARTELINK_ENGINE_BIN=<path>` uses a prebuilt engine instead of running Go.
 
-## Building for macOS
-
-Needs Go ≥ 1.27 and the Xcode Command Line Tools (`xcode-select --install`).
-
-```bash
-bash scripts/build-mac-app.sh
-```
-
-Produces `dist/CarteLink.app` (universal arm64 + x86_64, native window, ad-hoc signed) and
-three `.dmg` to hand out: `CarteLink-<version>.dmg` (universal), `…-apple-silicon.dmg`
-(arm64) and `…-intel.dmg` (x86_64). The app needs macOS 13 Ventura or later (Go 1.27).
-Without the Command Line Tools `bash scripts/mac-setup.sh` still builds `./cartelink`,
-which opens the UI in the browser.
-
-Installing (the build is not notarized, so the first launch needs a Gatekeeper
-permission): [`INSTALL-MACOS.md`](INSTALL-MACOS.md) for people,
-[`INSTALL-MACOS-AI.md`](INSTALL-MACOS-AI.md) as a prompt for an AI agent.
-
-## Tests
+## Checks
 
 ```
-go vet . ./internal/...
-go test . ./internal/...
-node --check internal/web/ui/app.js
+cargo test
+cargo clippy -- -D warnings
+go vet ./enginehost
+node --check ui/js/core.js
 ```
 
-## Notes
-
-- The engine's config watcher hot-reloads api-keys, providers, auth files — no restart
-  needed. Host/port changes apply after «Перезапустити» (a real in-process restart).
-- The control API (`/api/*`) accepts same-origin browser requests and local processes
-  only; cross-origin pages get 403.
-- OAuth logins open Edge/Chrome/Brave with a dedicated `--user-data-dir` in private mode,
-  so the window is a separate process and closes itself when the login completes.
+Installing on a Mac (the build is not notarized): [`INSTALL-MACOS.md`](INSTALL-MACOS.md),
+[`INSTALL-MACOS-AI.md`](INSTALL-MACOS-AI.md).

@@ -1,0 +1,147 @@
+/* Нічна схема метро — midnight transit diagram. Deep navy ground, thick
+   coloured lines at 90°/45°, white stations with dark rims, interchange rings,
+   signage type. Scoped to html[data-theme="transit"] and the .tr-* prefix. */
+
+html[data-theme="transit"] {
+  --bg: #070b18; --bg-2: #050812; --surface: #0c1326; --surface-2: #121b33; --surface-3: #1a2542;
+  --line: #1c2844; --line-strong: #2c3b5f; --text: #f3f6fc; --text-2: #b0bcd4; --text-3: #8492b3;
+  --accent: #ffcd00; --accent-2: #2f7cf6; --accent-ink: #0a0f1e; --accent-soft: rgba(255, 205, 0, 0.12);
+  --ok: #2fd27a; --warn: #ffb020; --bad: #ff5a52; --info: #5aa8ff;
+  --ok-soft: rgba(47, 210, 122, 0.13); --warn-soft: rgba(255, 176, 32, 0.14); --bad-soft: rgba(255, 90, 82, 0.14); --info-soft: rgba(90, 168, 255, 0.13);
+  --chart-ok: #2f7cf6; --chart-bad: #ff5a52;
+  --font: "Segoe UI Variable Text", "Segoe UI", "Frutiger", "Frutiger Linotype", "Myriad Pro", -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", "Frutiger", "Helvetica Neue", -apple-system, Arial, sans-serif;
+  --fw-display: 700; --track-display: -0.01em; --caps: none;
+  --radius: 12px; --radius-sm: 8px; --radius-lg: 16px;
+  --shadow: none; --shadow-pop: 0 24px 60px -18px rgba(0, 0, 0, 0.8), 0 0 0 1px #2c3b5f;
+  --tr-rim: #070b18; --tr-feeder: #6f7d9e;
+  color-scheme: dark;
+}
+
+/* ── chrome ─────────────────────────────────────────────────────────────── */
+html[data-theme="transit"] .side { background: var(--bg-2); }
+html[data-theme="transit"] .brand-mark { border-radius: 50%; background: transparent; color: var(--text); box-shadow: inset 0 0 0 5px var(--accent); }
+html[data-theme="transit"] .brand-name { font-weight: 800; letter-spacing: 0.01em; }
+html[data-theme="transit"] .topbar { background: color-mix(in srgb, var(--bg) 88%, transparent); }
+html[data-theme="transit"] .top-title { font-weight: 800; }
+html[data-theme="transit"] .card { background: var(--surface); border-color: var(--line); }
+html[data-theme="transit"] .card-h h2 { display: flex; align-items: center; gap: 9px; font: 700 15px/1.2 var(--font-display); }
+html[data-theme="transit"] .card-h h2::before { content: ""; flex: none; width: 9px; height: 9px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px var(--tr-rim), 0 0 0 5px var(--accent); margin-inline: 3px 3px; }
+html[data-theme="transit"] .btn { border-radius: 999px; font-weight: 600; }
+html[data-theme="transit"] .btn.primary:hover { background: #ffe066; }
+html[data-theme="transit"] .chip { border-radius: 999px; font-weight: 600; }
+html[data-theme="transit"] .input, html[data-theme="transit"] .select, html[data-theme="transit"] .textarea, html[data-theme="transit"] .mp-btn { background: var(--bg-2); }
+html[data-theme="transit"] .table th { color: var(--text-2); letter-spacing: 0.06em; background: var(--surface); }
+html[data-theme="transit"] .avatar { border-radius: 50%; background: var(--surface-3); color: var(--text); }
+html[data-theme="transit"] .kpis { background: var(--surface); }
+html[data-theme="transit"] .kpi-value { font-weight: 800; }
+html[data-theme="transit"] .segbar > i { border-radius: 999px; }
+html[data-theme="transit"] .dlg { border-top: 6px solid var(--accent); }
+html[data-theme="transit"] .tipbox { background: #fff; color: #0a0f1e; border-color: #fff; font-weight: 500; }
+html[data-theme="transit"] .chart .col i { border-radius: 999px; opacity: 1; }
+html[data-theme="transit"] .chart { gap: 5px; }
+
+/* navigation = two metro lines; every page is a station */
+html[data-theme="transit"] .nav-group { position: relative; --lc: #e8352c; }
+html[data-theme="transit"] .nav-group[data-group="manage"] { --lc: #2f7cf6; }
+html[data-theme="transit"] .nav-group-title { display: flex; align-items: center; gap: 8px; color: var(--text-2); letter-spacing: 0.08em; }
+html[data-theme="transit"] .nav-group-title::before { content: ""; width: 14px; height: 14px; border-radius: 50%; background: var(--lc); flex: none; }
+html[data-theme="transit"] body:not(.nav-compact) .nav-group::before { content: ""; position: absolute; inset-inline-start: 19px; top: 46px; bottom: 16px; width: 6px; border-radius: 3px; background: var(--lc); }
+html[data-theme="transit"] body:not(.nav-compact) .nav-item { padding-inline-start: 42px; color: var(--text-2); }
+html[data-theme="transit"] body:not(.nav-compact) .nav-item > svg.i { display: none; }
+html[data-theme="transit"] body:not(.nav-compact) .nav-item::after { content: ""; position: absolute; inset-inline-start: 15px; top: 50%; width: 14px; height: 14px; margin-top: -7px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px var(--bg-2); transition: transform var(--dur) var(--ease); }
+html[data-theme="transit"] .nav-item:hover { background: var(--surface); color: var(--text); }
+html[data-theme="transit"] .nav-item.active { background: transparent; color: var(--text); font-weight: 700; }
+html[data-theme="transit"] .nav-item.active::before { display: none; }
+html[data-theme="transit"] body:not(.nav-compact) .nav-item.active::after { transform: scale(1.2); background: #fff; box-shadow: 0 0 0 3px var(--tr-rim), 0 0 0 5px #fff; }
+html[data-theme="transit"] body.nav-compact .nav-item.active { background: var(--accent-soft); color: var(--accent); }
+
+/* ── hero: route map ────────────────────────────────────────────────────── */
+.tr-sign { display: flex; align-items: center; flex-wrap: wrap; gap: 14px 18px; padding: 4px 0 14px; border-bottom: 1px solid var(--line); }
+.tr-sign-t { flex: 1 1 260px; min-width: 0; }
+.tr-sign-t small { display: block; color: var(--text-2); font-size: 12px; letter-spacing: 0.02em; }
+.tr-sign .tr-model { margin: 2px 0 0; font: 800 clamp(24px, 2.8vw, 38px)/1.08 var(--font-display); letter-spacing: -0.015em; }
+.tr-sign-act { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex: 1 1 380px; justify-content: flex-end; }
+.tr-pick { flex: 1 1 220px; max-width: 360px; }
+.tr-badge { display: inline-grid; place-items: center; flex: none; min-width: 26px; height: 26px; padding: 0 5px; border-radius: 999px; background: var(--c); color: var(--ink); font: 800 11.5px/1 var(--font); letter-spacing: 0; }
+.tr-badge.big { min-width: 52px; height: 52px; font-size: 19px; box-shadow: 0 0 0 4px var(--tr-rim, #070b18), 0 0 0 6px var(--c); }
+.tr-map { overflow-x: auto; margin: 6px -6px 0; }
+.tr-svg { display: block; width: 100%; min-width: 640px; height: auto; font-family: var(--font); }
+.tr-svg path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.tr-svg .tr-feed { stroke: var(--tr-feeder); }
+.tr-svg .tr-line.plan { stroke-dasharray: 2 12; opacity: 0.75; }
+.tr-svg .tr-head { fill: var(--text-3); font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.tr-svg .tr-lbl { fill: var(--text); font-size: 14px; font-weight: 600; }
+.tr-svg .tr-lbl.big { font-size: 17px; font-weight: 800; }
+.tr-svg .tr-cnt { fill: var(--text-3); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.tr-svg .tr-st circle, .tr-svg .tr-term circle { fill: #fff; stroke: var(--tr-rim); stroke-width: 3.5; }
+.tr-svg .tr-st.fail circle { stroke: var(--bad); }
+.tr-svg .tr-term .tr-end { fill: var(--c); }
+.tr-svg .tr-term.fail .tr-cnt { fill: var(--bad); }
+.tr-svg .tr-term .tr-ix { stroke: var(--tr-rim); stroke-width: 5; }
+.tr-svg .tr-term .tr-ring { fill: none; stroke: #fff; stroke-width: 3; }
+.tr-svg .tr-code { fill: var(--c); }
+.tr-svg .tr-codet { font-size: 10.5px; font-weight: 800; }
+.tr-svg .tr-hub rect { fill: #fff; stroke: var(--tr-rim); stroke-width: 5; }
+.tr-svg .tr-term circle { transform-box: fill-box; transform-origin: center; }
+.tr-svg .tr-term.arr circle:not(.tr-ring) { animation: trArr calc(700ms * var(--t)) var(--ease); }
+@keyframes trArr { 40% { transform: scale(1.45); } }
+.tr-svg .tr-train { stroke: #fff; stroke-width: 7; stroke-dasharray: 9 300; stroke-dashoffset: 9; filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.8)); animation: trRun calc(900ms * var(--t)) cubic-bezier(0.45, 0, 0.55, 1) both; }
+.tr-svg .tr-train.bad { stroke: var(--bad); filter: drop-shadow(0 0 5px var(--bad)); }
+.tr-svg .tr-train.b { animation-delay: calc(820ms * var(--t)); }
+@keyframes trRun { from { stroke-dashoffset: 9; } to { stroke-dashoffset: -101; } }
+.tr-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--text-2); font-size: 12.5px; }
+.tr-state { display: inline-flex; align-items: center; gap: 8px; }
+.tr-state b { color: var(--text); }
+.tr-state.warn b { color: var(--warn); }
+
+/* ── lines legend ───────────────────────────────────────────────────────── */
+.tr-lines-list { display: grid; }
+.tr-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.tr-row:last-child { border-bottom: 0; }
+.tr-row-m { min-width: 0; display: grid; gap: 7px; }
+.tr-row-m b { font-weight: 700; }
+.tr-track { position: relative; display: flex; align-items: center; gap: 10px; height: 14px; padding-inline: 2px; }
+.tr-track::before { content: ""; position: absolute; inset-inline: 0; top: 50%; height: 5px; margin-top: -2.5px; border-radius: 3px; background: var(--c); }
+.tr-track i { position: relative; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2.5px var(--surface); }
+.tr-track i.limited, .tr-track i.warn { background: var(--warn); }
+.tr-track i.error, .tr-track i.invalid { background: var(--surface); box-shadow: 0 0 0 2.5px var(--bad); }
+.tr-track i.disabled { background: var(--surface); box-shadow: 0 0 0 2.5px var(--text-3); }
+.tr-svc { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.tr-svc.ok { color: var(--ok); }
+.tr-svc.warn { color: var(--warn); }
+.tr-svc.bad { color: var(--bad); }
+.tr-frac { color: var(--text-3); font-size: 12px; min-width: 32px; text-align: end; }
+
+/* ── arrivals board ─────────────────────────────────────────────────────── */
+.tr-board { display: grid; border-radius: var(--radius-sm); background: var(--bg-2); border: 1px solid var(--line); overflow: hidden; }
+.tr-brow { display: grid; grid-template-columns: 62px auto minmax(0, 1fr) auto 58px; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.tr-brow:last-child { border-bottom: 0; }
+.tr-brow.first { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.tr-time { color: var(--accent); font: 700 14px/1 var(--font-mono); }
+.tr-dest { display: grid; }
+.tr-dest b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
+.tr-dest span { color: var(--text-3); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; }
+.tr-bst { font-size: 12px; font-weight: 700; color: var(--ok); white-space: nowrap; }
+.tr-brow.bad .tr-bst { color: var(--bad); }
+.tr-ms { color: var(--text-2); font-size: 12px; text-align: end; }
+
+/* ── background: ghost lines of the night map ───────────────────────────── */
+.tr-fx { position: absolute; inset: 0; width: 100%; height: 100%; }
+.tr-fx path { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 16; }
+.tr-fx .g { stroke: rgba(130, 160, 230, 0.045); }
+.tr-fx .run { stroke: rgba(255, 255, 255, 0.22); stroke-width: 6; stroke-dasharray: 3 300; stroke-dashoffset: 3; opacity: 0; }
+.tr-fx .run.on { animation: trFx calc(4.5s * var(--t)) linear forwards; }
+@keyframes trFx { 0% { opacity: 1; stroke-dashoffset: 3; } 95% { opacity: 1; } 100% { opacity: 0; stroke-dashoffset: -100; } }
+
+/* ── gallery thumbnail ──────────────────────────────────────────────────── */
+.th-tr { height: 100%; background: #070b18; }
+.th-tr svg { width: 100%; height: 100%; display: block; }
+.th-tr path { fill: none; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+.th-tr circle { fill: #fff; stroke: #070b18; stroke-width: 2; }
+.th-tr circle.ix { stroke-width: 3; r: 7; }
+
+@media (max-width: 760px) {
+  .tr-brow { grid-template-columns: 52px auto minmax(0, 1fr) auto; }
+  .tr-ms { display: none; }
+}

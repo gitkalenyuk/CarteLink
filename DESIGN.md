@@ -1,217 +1,92 @@
 ---
-name: CarteLink
-description: Local AI gateway desktop console — calm, dark, data-first.
+name: CarteLink 3
+description: A local AI gateway console that the user arranges and dresses themselves — one component system, ten worlds and a custom one.
+themes: [graphite, datamatics, departures, aurora, paper, synthwave, phosphor, nord, sunset, swiss, custom]
+default-theme: graphite
 colors:
-  ink-bg: "#09090b"
-  sidebar-bg: "#0c0c0f"
-  surface: "#111114"
-  surface-raised: "#16161a"
-  surface-overlay: "#1d1d22"
-  text-primary: "#ededf0"
-  text-secondary: "#a8a8b3"
-  text-tertiary: "#8a8a96"
-  coral: "#ff6a55"
-  status-ok: "#3ecf8e"
-  status-warn: "#f2b33d"
-  status-bad: "#f26b6b"
-  status-info: "#74a7ff"
+  bg: "#16171a"
+  bg-2: "#121316"
+  surface: "#1c1d21"
+  surface-2: "#222328"
+  surface-3: "#2a2c32"
+  line: "#2c2e34"
+  line-strong: "#3a3d45"
+  text: "#e6e7ea"
+  text-2: "#a4a7b0"
+  text-3: "#80838d"
+  accent: "#7aa2f7"
+  accent-ink: "#0d1220"
+  ok: "#9ece6a"
+  warn: "#e0af68"
+  bad: "#f7768e"
+  info: "#7dcfff"
 typography:
-  display:
-    fontFamily: "Segoe UI Variable Display, Segoe UI, -apple-system, SF Pro Display, system-ui, sans-serif"
-    fontSize: "30px"
-    fontWeight: 650
-    lineHeight: 1.15
-    letterSpacing: "-0.025em"
-  headline:
-    fontFamily: "Segoe UI Variable Display, Segoe UI, -apple-system, system-ui, sans-serif"
-    fontSize: "24px"
-    fontWeight: 650
-    lineHeight: 1.2
-    letterSpacing: "-0.02em"
-  title:
-    fontFamily: "Segoe UI Variable Text, Segoe UI, -apple-system, system-ui, sans-serif"
-    fontSize: "14px"
-    fontWeight: 600
-    lineHeight: 1.4
-  body:
-    fontFamily: "Segoe UI Variable Text, Segoe UI, -apple-system, system-ui, sans-serif"
-    fontSize: "13.5px"
-    fontWeight: 400
-    lineHeight: 1.5
-  label:
-    fontFamily: "Segoe UI Variable Text, Segoe UI, -apple-system, system-ui, sans-serif"
-    fontSize: "12.5px"
-    fontWeight: 500
-    lineHeight: 1.4
-  mono:
-    fontFamily: "Cascadia Code, Cascadia Mono, JetBrains Mono, SF Mono, Consolas, monospace"
-    fontSize: "12.5px"
-    fontWeight: 400
-    lineHeight: 1.5
-rounded:
-  chip: "999px"
-  control-sm: "6px"
-  control: "8px"
-  panel: "12px"
-spacing:
-  xs: "6px"
-  sm: "8px"
-  md: "12px"
-  lg: "16px"
-  xl: "20px"
-  page-x: "36px"
-components:
-  button-primary:
-    backgroundColor: "{colors.text-primary}"
-    textColor: "{colors.ink-bg}"
-    rounded: "{rounded.control}"
-    height: "32px"
-    padding: "0 12px"
-  button-default:
-    backgroundColor: "{colors.surface-raised}"
-    textColor: "{colors.text-primary}"
-    rounded: "{rounded.control}"
-    height: "32px"
-    padding: "0 12px"
-  button-brand:
-    backgroundColor: "{colors.coral}"
-    textColor: "#1a0703"
-    rounded: "{rounded.control}"
-    height: "32px"
-  input:
-    backgroundColor: "{colors.ink-bg}"
-    textColor: "{colors.text-primary}"
-    rounded: "{rounded.control}"
-    height: "34px"
-    padding: "0 11px"
-  panel:
-    backgroundColor: "{colors.surface}"
-    rounded: "{rounded.panel}"
-    padding: "18px 20px"
-  chip-ok:
-    textColor: "{colors.status-ok}"
-    rounded: "{rounded.chip}"
-    height: "20px"
+  body: { fontFamily: "Segoe UI Variable Text, Segoe UI, -apple-system, SF Pro Text, system-ui, sans-serif", fontSize: "13.5px (× user scale 85–125%)", lineHeight: 1.5 }
+  display: { fontFamily: "Segoe UI Variable Display, Segoe UI, SF Pro Display, system-ui", fontWeight: 650, letterSpacing: "-0.02em" }
+  mono: { fontFamily: "Cascadia Code, JetBrains Mono, SF Mono, Menlo, Consolas, monospace", use: "model ids, keys, addresses, numbers in feeds" }
+rounded: { control: "7px", panel: "10px", dialog: "14px", chip: "999px" }
+spacing: { pad: "18px", gap: "14px", page-x: "32px", density: "dense 14/10 · normal 18/14 · roomy 22/18" }
+motion: { ease: "cubic-bezier(0.16, 1, 0.3, 1)", base: "220ms × --t", slow: "520ms × --t", levels: "full · reduced (--t 0.55) · off" }
 ---
 
-# Design System: CarteLink
+# CarteLink 3 — design system
 
-## Overview
+## Principle
 
-**Creative North Star: "The Quiet Control Room"** (provisional name, recorded from the build)
+One component system, many worlds. Every colour, radius, font and motion value is a token
+on `:root` (`ui/css/app.css`); a theme (`ui/css/themes.css`, `html[data-theme=…]`) only
+redefines tokens, plus at most a few world-specific touches. Nothing about a component's
+structure changes per theme, so every page works in every theme, including the user's own.
 
-CarteLink is a tool people open rarely and briefly: to see which model answers, switch it,
-check accounts and errors, and copy the address and key. The system is a calm dark console
-in the Linear / Vercel / Raycast / Stripe tradition (the user's chosen quality bar):
-near-black neutrals, hairline borders, one coral accent, and status colours that only ever
-mean status. Information sits in a short, grouped sidebar (Gateway: Overview, Models,
-Accounts, Statistics; Manage: Connect an app, Providers, Settings, Help) and in panels on a
-single content column.
+The user owns the layout: every page is a 12-column grid of blocks
+(`.blocks[data-area] > .block[data-block][data-w]`) they can drag, resize (3–12 columns) and
+hide in edit mode (top-bar layout button or Ctrl+K); menu items can be reordered, moved
+between groups and hidden. Interface parts can be switched off in Налаштування → Інтерфейс.
+All of it lives in `config.json → ui` and is mirrored in localStorage to avoid a flash at start.
 
-**Key Characteristics:**
-- Restrained palette: neutrals + one coral accent; status hues reserved for state.
-- Tonal layering instead of heavy shadows; 1px borders at 7.5–20% white.
-- Real data as the hero: the model answering now, KPIs, a 24-hour activity chart.
-- Short, eased-out motion on state changes, plus one launch sequence.
-- Lucide-style inline SVG icons (1.75 stroke) from one sprite; no emoji as icons.
+## Worlds
 
-## Colors
+A design is a composition, not a palette: it owns the shell, the Overview layout, its widgets and background
+(`ui/js/designs/<id>.js` + `ui/css/designs/<id>.css`, scoped by `html[data-theme="<id>"]`; contract in `ui/js/design.js`).
 
-Near-black, cool-neutral grounds stepping up in lightness per layer, with a single warm coral.
+| Design | Shell · mode | Signature |
+|---|---|---|
+| Графіт (default) | sidebar · dark | Dev console; request pipeline Програма → Ключ → Правило → Модель → Відповідь lights up per request |
+| Datamatics | topbar · dark | Pure B/W mono field; monumental uppercase model; barcode activity; states by glyph, never colour |
+| Табло вокзалу | sidebar · dark | Split-flap departures board; requests leave as departures, providers are platforms |
+| Нічна схема метро | sidebar · dark | Route map: programs are stations, providers are lines, the active model is the interchange; a train runs per request |
+| Жовта навігація | topbar · light | Airport signage: yellow/black sign panels, arrows, gate boxes; every program a direction sign |
+| Японський щільний | topbar · light | Dense portal modules with coloured header bars, rankings, ticker, ○△× account table |
+| Metro-плитки | rail · dark | Flat solid tiles, huge light lowercase type, live tiles that cycle |
+| Пульсар | rail · dark | Record-sleeve ridge plot of 24 h traffic, tiny catalogue type, crop marks |
+| Зоряний атлас | sidebar · dark | Celestial chart: models are stars (magnitude = requests), programs are constellations |
+| Посадковий талон | sidebar · light | Boarding pass for the active model plus a departures gate board and seat map of accounts |
+| Касета | rail · light | J-card insert: reels turn while requests stream, track list side A/B, VU meters |
+| Спектральні лінії | rail · dark | Emission-line spectrum of model traffic, spectrogram waterfall |
+| Фотолабораторія | sidebar · dark | Safelight darkroom: contact sheet of requests, zone scale of account health |
+| Теплий застосунок | topbar · light | Friendly consumer app: greeting, one plain status sentence, people-like account chips |
+| Свій дизайн | base design | Any base + edited tokens, font, radius, glass; export/import (cartelink-theme.json) |
 
-### Primary
-- **Signal Coral** (#ff6a55): brand mark, active navigation icon, selected preset, focus
-  ring, switched-on toggles, links. Never a large fill except the brand tile and the
-  `btn-brand` action.
+## Components (classes)
 
-### Neutral
-- **Ink** (#09090b): app background and input wells.
-- **Sidebar Ink** (#0c0c0f): the navigation column.
-- **Panel** (#111114): panels (`.card`).
-- **Raised** (#16161a) / **Overlay** (#1d1d22): rows, chips, hovered controls, tooltips.
-- **Text** (#ededf0) / **Secondary** (#a8a8b3) / **Tertiary** (#8a8a96).
+`card` / `card-h` / `card-icon` / `card-foot`, `btn` (`primary`, `ghost`, `danger`, `sm`, `icon`, busy/done states),
+`input` / `select` / `textarea`, `field` + `hint`, `switch`, `seg`, `chip` (`ok warn bad info accent outline`),
+`table`, `list` + `li` + `avatar`, `kpis` + `kpi`, `bar`, `segbar`, `ring`, `chart` (+ `chart-axis`), `code`,
+`kv`, `tags` + `tag`, `banner` (`info`, `bad`), `empty`, `skel`, dialogs (`CL.dialog`, `CL.confirm`, `CL.prompt`),
+`mp` (searchable model picker), command palette (`cmdk`), toasts, tooltips (`data-tip`).
 
-### Status
-- **Ok** (#3ecf8e), **Warn** (#f2b33d), **Bad** (#f26b6b), **Info** (#74a7ff), each with a
-  ~12% soft fill for chips and notices.
+Icons: one stroked 24px sprite (`#i-*` in `ui/index.html`), 1.8 stroke, round caps. No emoji.
 
-### Named Rules
-**The One Accent Rule.** Coral marks the current thing (selection, focus, brand) and nothing
-else; primary actions are light-on-dark (`button-primary`), not coral.
-**The Status Means Status Rule.** Green/amber/red appear only for live state (running,
-limit, error), never for decoration.
+## Motion
 
-## Typography
+Exponential ease-out from an already-visible default: page content rises in (staggered per
+block, starting at partial opacity so a hidden window never shows an empty page), the model
+name rolls (or flips on the board), numbers count up, live feed rows slide in, rings and bars
+glide to new values, theme changes cross-fade through View Transitions. `--t` scales every
+duration; "off" sets them to 1 ms; `prefers-reduced-motion` is honoured unless the user forces motion.
 
-**Body/UI:** Segoe UI Variable Text (system stack fallbacks). **Display:** Segoe UI Variable
-Display. **Mono:** Cascadia Code — only for model ids, keys, URLs, code and numbers in tables.
+## States
 
-### Hierarchy
-- **Display** (650, 30px, 1.15, -0.025em): the model answering now.
-- **Headline** (650, 24px, 1.2, -0.02em): page titles.
-- **Title** (600, 14px): panel titles, always led by an icon.
-- **Body** (400, 13.5px, 1.5): copy; hints 12.5px in Secondary/Tertiary.
-- **KPI value** (650, 24px, tabular numerals).
-
-**The Mono Is Data Rule.** Monospace marks identifiers and measurements, never decoration.
-
-## Layout
-
-Two-column shell: 236px sidebar + content column (max 1180px, 28px/36px padding). Overview:
-a 1.55fr/1fr row ("answering now" + gateway/address), a four-up KPI row, a full-width
-activity chart, then a two-up row (accounts, recent errors). Panels gap 16px, KPI gap 12px.
-Below 1100px the hero row stacks and KPIs go two-up; below 900px the sidebar collapses to a
-64px icon rail and all two-column grids stack. RTL (Arabic, Urdu) mirrors the layout.
-
-## Elevation & Depth
-
-Depth is tonal: each layer is a step lighter with a 1px border. Panels carry only an inset
-top highlight and a 1–2px shadow (`--shadow-1`); popovers and toasts use `--shadow-pop`
-(18px 48px blur + 1px ring). No glows, no coloured halos.
-
-## Shapes
-
-Radii: 6px small controls, 8px controls, 12px panels, pills for chips and badges. Icons are
-round-capped 1.75 strokes on a 24px grid.
-
-## Components
-
-- **Buttons:** 32px; default = raised neutral, primary = light fill, ghost = text-only,
-  danger/warn = outlined text colour; press scales to 0.97.
-- **Inputs/selects:** 34px ink wells, coral focus ring (3px soft) — custom chevron.
-- **Toggle:** 34×20 track, coral when on, knob springs across (transform only).
-- **Chips:** 20px pills with a status dot for ok/warn/err.
-- **Presets 1/2:** outlined pills; the active one takes the coral soft fill and number badge.
-- **Activity chart:** 24 hourly bars, neutral for success, red for errors, grow-in on load.
-- **Skeletons:** shimmer bars while lists load; never spinners inside content.
-- **Launch:** the access gate doubles as splash — logo strokes draw, wordmark rises, a
-  coral sweep bar runs; on access the gate blurs out and the shell assembles
-  (sidebar slides in, nav items and panels rise with 30–40ms stagger).
-
-## Limits
-
-Account limits sit right under the "answering now" row: one card per account that reports
-percentages (two 76px rings, 5 hours and week, with the reset countdown) and one card per
-provider for accounts that only report a state (a segmented bar, one segment per account).
-A ring is neutral below 80%, amber from 80%, red at 100%. A blocked account's card has a
-red hairline that breathes (opacity only). Rings glide from their previous value.
-
-## Designs (themes)
-
-Three designs share one layout and differ only in tokens (`data-theme` on `<html>`):
-- **Console** (default): everything above.
-- **Glass**: blue-black ground with a slow drifting light (one fixed layer moved by
-  `transform`, no live blur), 18px panels with a soft top highlight, periwinkle accent `#9aa5ff`.
-- **Terminal**: mono type everywhere, 2–4px corners, a static dot grid, cyan accent `#4fd8eb`,
-  a blinking caret after page titles.
-The rules below describe Console; a design may change accent, radii and type, never the
-meaning of status colours.
-
-## Do's and Don'ts
-
-- Do lead every panel title with its icon; do keep copy plain and action-named.
-- Do animate only state changes (150–350ms, `cubic-bezier(0.16, 1, 0.3, 1)`), with
-  `prefers-reduced-motion` honoured.
-- Don't use emoji or Unicode glyphs as icons; don't add eyebrow labels above headings.
-- Don't use coloured side stripes, gradient text, glows, or hard offset shadows.
-- Don't introduce a second accent colour or a display face other than Segoe UI Variable.
+Account states map to one chip vocabulary everywhere: `ok` активний, `warn` близько до ліміту,
+`limited` ліміт, `error` помилка, `invalid` вхід відхилено, `disabled` вимкнено. Every error
+shown to the user carries a plain-language hint (`CL.errorHint`) — what happened and what to do.

@@ -1,0 +1,55 @@
+/* CarteLink 3 — the floating model switcher (≈340×316). Tokens only, so
+   every theme (and the user's own design) applies here too. */
+
+body { user-select: none; background: var(--bg); }
+.sw { height: 100%; display: flex; flex-direction: column; gap: 9px; padding: 10px 12px 12px; }
+
+.sw-h { display: flex; align-items: center; gap: 8px; min-height: 24px; font-size: 12px; color: var(--text-3); }
+.sw-h .btn { margin-inline-end: -6px; }
+
+/* the same now-model as on Overview (roll / split-flap per theme); sized here
+   by switcher.js to fit two lines at most */
+#current.nowmodel { font-size: 20px; line-height: 1.2; min-height: 24px; max-height: 2.6em; overflow: hidden; word-break: break-all; }
+html[data-theme="departures"] #current.nowmodel { gap: 2px; max-height: 3.2em; }
+#current.nowmodel.faint { color: var(--text-3); }
+
+.sw-slots { display: flex; flex-direction: column; gap: 6px; }
+.sw-slot {
+  display: flex; align-items: center; gap: 8px; padding: 4px; padding-inline-end: 8px;
+  border-radius: var(--radius); border: var(--border-w) solid var(--line);
+  background: color-mix(in srgb, var(--surface) calc(var(--surface-alpha) * 100%), transparent);
+  cursor: pointer; transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.sw-slot:hover { border-color: var(--line-strong); }
+.sw-slot.active { border-color: color-mix(in srgb, var(--accent) 70%, transparent); background: var(--accent-soft); }
+.sw-slot.empty { cursor: default; }
+.sw-num {
+  width: 30px; height: 30px; flex: none; display: grid; place-items: center;
+  border: 0; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--text-2);
+  font: 700 13px/1 var(--font-mono); cursor: pointer; transition: background var(--dur), color var(--dur);
+}
+.sw-num:hover { color: var(--text); }
+.sw-num:disabled { cursor: default; opacity: 0.6; }
+.sw-slot.active .sw-num { background: var(--accent); color: var(--accent-ink); }
+.sw-slot .mp-btn { height: 30px; }
+.sw-tick { color: var(--accent); opacity: 0; transition: opacity var(--dur); }
+.sw-slot.active .sw-tick { opacity: 1; }
+
+.sw-actions { display: flex; align-items: center; gap: 8px; }
+
+.sw-auto { display: flex; flex-direction: column; gap: 3px; margin-top: auto; }
+.sw-auto .switch { align-items: flex-start; gap: 9px; }
+.sw-auto .track { margin-top: 1px; }
+.sw-auto-t { font-size: 12px; line-height: 1.35; color: var(--text-2); }
+.sw-state { font-size: 11.5px; color: var(--text-3); padding-inline-start: 45px; }
+.sw-auto.armed .sw-state { color: var(--accent); }
+
+.sw-err { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: var(--radius-sm); border: var(--border-w) solid color-mix(in srgb, var(--bad) 60%, transparent); background: var(--bad-soft); font-size: 12px; }
+.sw-err .i { color: var(--bad); }
+.sw.off .sw-slots, .sw.off .sw-actions, .sw.off .sw-auto { opacity: 0.45; pointer-events: none; }
+
+/* the model picker opens as a sheet over the whole small window */
+.mp-pop { left: 8px !important; right: 8px !important; top: 8px !important; bottom: 8px !important; width: auto !important; max-width: none !important; max-height: none !important; }
+
+#toasts { bottom: 8px; inset-inline: 8px; align-items: stretch; }
+.toast { max-width: none; font-size: 12px; padding: 8px 10px; }

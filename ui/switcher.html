@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CarteLink — перемикач моделей</title>
+<script>
+// The user's theme before the first paint (same as index.html).
+try {
+  var p = JSON.parse(localStorage.getItem('cl.look') || '{}');
+  if (p.theme && p.theme !== 'graphite') document.documentElement.setAttribute('data-theme', p.theme);
+  if (p.vars) for (var k in p.vars) document.documentElement.style.setProperty(k, p.vars[k]);
+} catch (e) {}
+</script>
+<link rel="stylesheet" href="css/app.css?v=3.0.0">
+<link rel="stylesheet" href="css/themes.css?v=3.0.0">
+<link rel="stylesheet" href="switcher.css?v=3.0.0">
+<script src="js/i18n.js?v=3.0.0"></script>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></symbol>
+  <symbol id="i-window" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><rect x="12" y="10" width="7" height="5" rx="1"/><path d="M8 21h8"/></symbol>
+  <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/></symbol>
+</svg>
+
+<main class="sw" id="sw" aria-busy="true">
+  <header class="sw-h">
+    <span class="dot off" id="dot"></span>
+    <span class="grow ellipsis">Активна модель</span>
+    <button class="btn ghost sm icon" id="openMain" data-tip="Відкрити CarteLink" aria-label="Відкрити CarteLink"><svg class="i sm"><use href="#i-window"/></svg></button>
+  </header>
+
+  <div class="nowmodel faint" id="current" aria-live="polite">…</div>
+
+  <div class="sw-err hidden" id="err">
+    <svg class="i sm"><use href="#i-alert"/></svg>
+    <span class="grow" id="errText">CarteLink не відповідає</span>
+    <button class="btn sm" id="retry"><svg class="i sm"><use href="#i-rotate"/></svg>Ще раз</button>
+  </div>
+
+  <div class="sw-slots">
+    <div class="sw-slot empty" id="slot1" data-to="1">
+      <button class="sw-num" data-to="1" data-tip="Застосувати модель 1 до всього" aria-label="Застосувати модель 1 до всього">1</button>
+      <div class="grow" id="m1"></div>
+      <svg class="i sm sw-tick" aria-hidden="true"><use href="#i-check"/></svg>
+    </div>
+    <div class="sw-slot empty" id="slot2" data-to="2">
+      <button class="sw-num" data-to="2" data-tip="Застосувати модель 2 до всього" aria-label="Застосувати модель 2 до всього">2</button>
+      <div class="grow" id="m2"></div>
+      <svg class="i sm sw-tick" aria-hidden="true"><use href="#i-check"/></svg>
+    </div>
+  </div>
+
+  <div class="sw-actions">
+    <button class="btn sm" id="swap" disabled><svg class="i sm"><use href="#i-swap"/></svg>Перемкнути</button>
+  </div>
+
+  <div class="sw-auto" id="autoRow">
+    <label class="switch"><input type="checkbox" id="auto"><span class="track"></span><span class="sw-auto-t">Змінити модель після першого вдалого запиту до моделі 1</span></label>
+    <div class="sw-state" id="autoState">вимкнено</div>
+  </div>
+</main>
+
+<div id="toasts" aria-live="polite"></div>
+
+<script src="js/core.js?v=3.0.0"></script>
+<script src="switcher.js?v=3.0.0"></script>
+</body>
+</html>

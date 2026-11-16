@@ -19,7 +19,10 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build app and dmg (vet and tests included)
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Build app and dmg (tests included)
         run: bash scripts/build-mac-app.sh
 
       - name: Smoke test the built binary
@@ -28,7 +31,7 @@ jobs:
         run: |
           lipo -info dist/CarteLink.app/Contents/MacOS/cartelink
           codesign --verify --deep dist/CarteLink.app
-          version=$(sed -n 's/^const Version = "\(.*\)"/\1/p' internal/config/config.go)
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           dist/CarteLink.app/Contents/MacOS/cartelink --headless --port 8317 &
           pid=$!
           for i in $(seq 1 60); do

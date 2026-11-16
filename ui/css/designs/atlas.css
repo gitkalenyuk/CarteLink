@@ -1,0 +1,216 @@
+/* ── Зоряний атлас — a historic star atlas. Deep ink-blue paper, fine gold and
+   ivory engraving, conic graticule, engraved serif labels in small capitals,
+   double-ruled cartouches. Models are stars, programs are constellations. */
+
+html[data-theme="atlas"] {
+  --at-gold: #d9b866; --at-gold-2: #f0d996; --at-ivory: #efe6cc; --at-ink: #0a1030;
+  --at-hair: rgba(217, 184, 102, 0.26); --at-hair-2: rgba(217, 184, 102, 0.5);
+  --bg: #0a1030; --bg-2: #080c27; --surface: #0e1539; --surface-2: #131c47; --surface-3: #1b2656;
+  --line: rgba(217, 184, 102, 0.2); --line-strong: rgba(217, 184, 102, 0.42);
+  --text: #efe6cc; --text-2: #c9bf9f; --text-3: #9a937e;
+  --accent: #d9b866; --accent-2: #9db8ff; --accent-ink: #0a1030; --accent-soft: rgba(217, 184, 102, 0.14);
+  --ok: #9fd8b0; --warn: #ecc06a; --bad: #f2917f; --info: #a9c1ff;
+  --ok-soft: rgba(159, 216, 176, 0.12); --warn-soft: rgba(236, 192, 106, 0.13); --bad-soft: rgba(242, 145, 127, 0.13); --info-soft: rgba(169, 193, 255, 0.12);
+  --chart-ok: linear-gradient(#f0d996, #b8954a); --chart-bad: #f2917f;
+  --font: "Constantia", "Sitka Text", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --font-display: "Sitka Display", "Sitka Heading", "Constantia", "Iowan Old Style", Georgia, serif;
+  --font-mono: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+  --fw-display: 500; --track-display: 0.01em; --caps: none;
+  --radius: 2px; --radius-sm: 2px; --radius-lg: 3px;
+  --shadow: inset 0 0 0 3px var(--surface), inset 0 0 0 4px rgba(217, 184, 102, 0.12);
+  --shadow-pop: 0 24px 60px -16px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(217, 184, 102, 0.3);
+  --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--at-gold-2);
+  color-scheme: dark;
+}
+html[data-theme="atlas"] body {
+  background:
+    radial-gradient(ellipse 70% 50% at 75% 10%, rgba(80, 100, 190, 0.18), transparent 70%),
+    radial-gradient(ellipse 60% 60% at 10% 100%, rgba(120, 80, 150, 0.12), transparent 70%),
+    var(--bg);
+  font-variant-numeric: oldstyle-nums;
+}
+html[data-theme="atlas"] .num, html[data-theme="atlas"] .table td.num, html[data-theme="atlas"] .kpi-value { font-variant-numeric: oldstyle-nums tabular-nums; }
+
+/* ── margin of the chart (sidebar) ── */
+html[data-theme="atlas"] .side { background: rgba(8, 12, 39, 0.82); border-inline-end: 1px solid var(--at-hair); box-shadow: inset -4px 0 0 -3px rgba(217, 184, 102, 0.12); }
+html[data-theme="atlas"][dir="rtl"] .side { box-shadow: none; }
+html[data-theme="atlas"] .brand-mark { border-radius: 50%; background: radial-gradient(circle at 35% 30%, var(--at-gold-2), var(--at-gold) 60%, #a8853a); color: var(--at-ink); box-shadow: 0 0 0 3px var(--bg-2), 0 0 0 4px var(--at-hair-2), 0 0 22px -2px rgba(240, 217, 150, 0.45); }
+html[data-theme="atlas"] .brand-name { font: 500 19px/1 var(--font-display); font-variant: small-caps; letter-spacing: 0.1em; color: var(--at-ivory); }
+html[data-theme="atlas"] .brand-sub { font-style: italic; }
+html[data-theme="atlas"] .nav-group-title { display: flex; align-items: center; gap: 8px; font: italic 400 12.5px/1 var(--font); text-transform: none; letter-spacing: 0.02em; color: var(--text-3); }
+html[data-theme="atlas"] .nav-group-title::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, var(--at-hair), transparent); }
+html[data-theme="atlas"] .nav-item { font-size: 14px; color: var(--text-2); border-radius: 2px; padding-inline-start: 26px; }
+html[data-theme="atlas"] .nav-item:hover { background: rgba(217, 184, 102, 0.07); color: var(--text); }
+html[data-theme="atlas"] .nav-item.active { background: transparent; color: var(--at-gold-2); }
+html[data-theme="atlas"] .nav-item.active::before { inset-inline-start: 7px; top: 50%; bottom: auto; width: 12px; height: 12px; margin-top: -6px; border-radius: 0; background: var(--at-gold-2); clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%); filter: drop-shadow(0 0 4px rgba(240, 217, 150, 0.8)); }
+html[data-theme="atlas"] body.nav-compact .nav-item { padding-inline-start: 0; }
+html[data-theme="atlas"] .nav-badge { background: var(--bad); color: var(--at-ink); }
+html[data-theme="atlas"] .side-foot { border-top-color: var(--at-hair); font-style: italic; }
+
+/* ── title plate ── */
+html[data-theme="atlas"] .topbar { background: rgba(10, 16, 48, 0.72); border-bottom: 1px solid var(--at-hair); box-shadow: 0 3px 0 -2px rgba(217, 184, 102, 0.12); }
+html[data-theme="atlas"] .top-title { font: 500 23px/1.1 var(--font-display); font-variant: small-caps; letter-spacing: 0.08em; color: var(--at-ivory); }
+html[data-theme="atlas"] .pill { border-radius: 2px; border-color: var(--at-hair); background: transparent; font-style: italic; }
+
+/* ── shared chrome ── */
+html[data-theme="atlas"] .card { background: linear-gradient(180deg, rgba(19, 28, 71, 0.9), rgba(14, 21, 57, 0.92)); border-color: var(--at-hair-2); }
+html[data-theme="atlas"] .card::before { content: ""; position: absolute; inset: 6px; pointer-events: none; background:
+  linear-gradient(var(--at-gold), var(--at-gold)) 0 0 / 9px 1px, linear-gradient(var(--at-gold), var(--at-gold)) 0 0 / 1px 9px,
+  linear-gradient(var(--at-gold), var(--at-gold)) 100% 0 / 9px 1px, linear-gradient(var(--at-gold), var(--at-gold)) 100% 0 / 1px 9px,
+  linear-gradient(var(--at-gold), var(--at-gold)) 0 100% / 9px 1px, linear-gradient(var(--at-gold), var(--at-gold)) 0 100% / 1px 9px,
+  linear-gradient(var(--at-gold), var(--at-gold)) 100% 100% / 9px 1px, linear-gradient(var(--at-gold), var(--at-gold)) 100% 100% / 1px 9px;
+  background-repeat: no-repeat; opacity: 0.7; }
+html[data-theme="atlas"] .card-h h2, html[data-theme="atlas"] .card-h h3 { font: 500 16px/1.2 var(--font-display); font-variant: small-caps; letter-spacing: 0.1em; color: var(--at-gold-2); }
+html[data-theme="atlas"] .h-display, html[data-theme="atlas"] .dlg h3 { font-family: var(--font-display); font-variant: small-caps; letter-spacing: 0.06em; font-weight: 500; }
+html[data-theme="atlas"] .btn { border-radius: 2px; letter-spacing: 0.02em; }
+html[data-theme="atlas"] .btn.primary { background: linear-gradient(180deg, var(--at-gold-2), var(--at-gold)); color: var(--at-ink); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25); }
+html[data-theme="atlas"] .btn.primary:hover { background: var(--at-gold-2); }
+html[data-theme="atlas"] .btn:not(.primary):not(.ghost):not(.danger) { background: transparent; border-color: var(--at-hair-2); }
+html[data-theme="atlas"] .btn:not(.primary):not(.ghost):not(.danger):hover { background: rgba(217, 184, 102, 0.1); }
+html[data-theme="atlas"] .input, html[data-theme="atlas"] .select, html[data-theme="atlas"] .textarea, html[data-theme="atlas"] .mp-btn { background: rgba(6, 9, 30, 0.6); border-color: var(--at-hair-2); }
+html[data-theme="atlas"] .chip { font-style: italic; font-weight: 500; }
+html[data-theme="atlas"] .table th { font: italic 500 13px/1.2 var(--font); text-transform: none; letter-spacing: 0.02em; color: var(--at-gold); background: var(--surface); border-bottom: 3px double var(--at-hair-2); }
+html[data-theme="atlas"] .table tbody tr:hover { background: rgba(217, 184, 102, 0.06); }
+html[data-theme="atlas"] .kpi-label { font-style: italic; }
+html[data-theme="atlas"] .kpi-value { font: 500 32px/1.1 var(--font-display); color: var(--at-ivory); }
+html[data-theme="atlas"] .avatar { border-radius: 50%; background: transparent; border: 1px solid var(--at-hair-2); color: var(--at-gold); font-family: var(--font-display); }
+html[data-theme="atlas"] .seg { border-radius: 2px; }
+html[data-theme="atlas"] .seg button { border-radius: 1px; }
+html[data-theme="atlas"] .seg button.on { background: var(--accent-soft); color: var(--at-gold-2); box-shadow: inset 0 0 0 1px var(--at-hair-2); }
+html[data-theme="atlas"] .dlg, html[data-theme="atlas"] .mp-pop { background: var(--surface); box-shadow: var(--shadow-pop), inset 0 0 0 4px var(--surface), inset 0 0 0 5px var(--at-hair); }
+html[data-theme="atlas"] .tipbox { background: #0b1236; border-color: var(--at-hair-2); font-style: italic; border-radius: 2px; }
+html[data-theme="atlas"] .toast { background: #121a44; border-color: var(--at-hair-2); border-radius: 2px; }
+html[data-theme="atlas"] .banner { border-radius: 2px; }
+html[data-theme="atlas"] .dot.ok { background: var(--at-gold-2); animation: atTwinkle calc(3.2s * var(--t)) ease-in-out infinite; }
+@keyframes atTwinkle { 50% { box-shadow: 0 0 8px 1px rgba(240, 217, 150, 0.7); } }
+html[data-theme="atlas"] .route-svg .rnode rect { fill: rgba(6, 9, 30, 0.6); stroke: var(--at-hair-2); }
+html[data-theme="atlas"] .route-svg .rnode text { font-family: var(--font); }
+html[data-theme="atlas"] .route-svg .rlink { stroke: rgba(217, 184, 102, 0.55); }
+html[data-theme="atlas"] .theme-tile .name { font-family: var(--font); }
+html[data-theme="atlas"] .feed-row .st { font-family: var(--font); font-style: italic; }
+
+/* ── heads inside atlas widgets ── */
+.at-head { display: flex; align-items: center; gap: 12px; margin: -2px 0 14px; }
+.at-head-t { font: 500 17px/1.2 var(--font-display); font-variant: small-caps; letter-spacing: 0.12em; color: var(--at-gold-2); white-space: nowrap; }
+.at-head-rule { flex: 1; height: 4px; border-top: 1px solid var(--at-hair-2); border-bottom: 1px solid var(--at-hair); }
+.at-head .btn.ghost { font-style: italic; }
+.at-sub { font-style: italic; color: var(--text-3); font-size: 12.5px; white-space: nowrap; }
+.at-none { padding: 18px 6px; color: var(--text-3); font-style: italic; text-align: center; }
+.at-none .btn { margin-top: 10px; font-style: normal; }
+
+/* ── hero: the celestial chart ── */
+html[data-theme="atlas"] .w-hero.card { padding: 8px; }
+.at-sky { position: relative; container-type: inline-size; }
+.at-svg { line-height: 0; }
+.at-chart { display: block; width: 100%; height: auto; font-family: var(--font); }
+.at-milky ellipse { fill: rgba(150, 170, 255, 0.07); }
+.at-grid line, .at-grid path { fill: none; stroke: rgba(217, 184, 102, 0.17); stroke-width: 0.8; }
+.at-glab text { fill: var(--text-3); font: italic 11px var(--font); }
+.at-field circle { fill: rgba(223, 230, 255, 0.4); }
+.at-frame rect { fill: none; stroke: var(--at-hair-2); stroke-width: 1; }
+.at-frame path { fill: none; stroke: var(--at-hair-2); stroke-width: 0.8; }
+.at-cons polyline, .at-cons line { fill: none; stroke: rgba(240, 217, 150, 0.5); stroke-width: 1; }
+.at-cons line.lead { stroke-dasharray: 2 3; }
+.at-cons text { fill: var(--at-gold); font: italic 13px var(--font); letter-spacing: 0.06em; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+.at-star .core { fill: #fff8e4; stroke: var(--bg); stroke-width: 1.4; }
+.at-star .spike { stroke: rgba(255, 246, 216, 0.55); stroke-width: 0.8; }
+.at-star .ring { fill: none; stroke: var(--bad); stroke-width: 1.2; stroke-dasharray: 3 2; }
+.at-star .pulse { fill: none; stroke: var(--at-gold-2); stroke-width: 1.5; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.at-star.flash .pulse { animation: atPulse calc(1.4s * var(--t)) var(--ease) 1; }
+@keyframes atPulse { 0% { opacity: 0.95; transform: scale(1); } 100% { opacity: 0; transform: scale(5); } }
+.at-star text { fill: var(--text-2); font: 12px var(--font); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+.at-star text .g { fill: var(--at-gold); font-style: italic; font-size: 13px; }
+.at-star.on .core { fill: #fffbea; }
+.at-star.on .halo { animation: atBreathe calc(4s * var(--t)) ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes atBreathe { 50% { opacity: 0.6; transform: scale(0.85); } }
+.at-label line { stroke: var(--at-gold); stroke-width: 0.8; }
+.at-label rect { fill: rgba(10, 16, 48, 0.92); stroke: var(--at-gold); stroke-width: 1; }
+.at-label rect.in { fill: none; stroke: var(--at-hair-2); stroke-width: 0.6; }
+.at-label text { fill: var(--at-gold-2); font: italic 13px var(--font); letter-spacing: 0.03em; }
+
+/* the cartouche */
+.at-cart { position: absolute; top: 22px; inset-inline-start: 22px; width: min(340px, 40%); padding: 16px 18px 16px; background: rgba(9, 14, 42, 0.9); border: 1px solid var(--at-gold); box-shadow: inset 0 0 0 4px rgba(9, 14, 42, 0.9), inset 0 0 0 5px var(--at-hair-2), 0 10px 30px -10px rgba(0, 0, 0, 0.7); text-align: center; }
+.at-cart::before, .at-cart::after { content: ""; position: absolute; top: 50%; width: 10px; height: 10px; margin-top: -5px; background: var(--at-gold); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+.at-cart::before { left: -5px; }
+.at-cart::after { right: -5px; }
+.at-cart-k { display: block; font: italic 13px/1 var(--font); letter-spacing: 0.08em; color: var(--at-gold); }
+html[data-theme="atlas"] .at-model { margin: 8px 0 4px; font: 500 clamp(22px, 3.2cqi, 34px)/1.12 var(--font-display); letter-spacing: 0.01em; color: var(--at-ivory); text-shadow: 0 0 18px rgba(240, 217, 150, 0.35); overflow-wrap: break-word; word-break: normal; }
+html[data-theme="atlas"] .at-model.rolling .ch { animation: atCh calc(700ms * var(--t)) ease-out both; animation-delay: calc(var(--k) * 22ms * var(--t)); }
+@keyframes atCh { from { opacity: 0; filter: blur(4px); } }
+.at-cart-sub { display: block; font-style: italic; font-size: 12.5px; color: var(--text-2); margin-bottom: 12px; }
+.at-cart.dim .at-model { color: var(--text-2); text-shadow: none; }
+.at-cart.dim .at-cart-sub { color: var(--warn); }
+.at-pick { text-align: start; }
+.at-cart-act { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 8px; }
+@container (max-width: 759px) {
+  .at-cart { position: static; width: auto; margin: 8px 8px 10px; }
+}
+
+/* key under the chart */
+.at-key { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 10px 10px 4px; font: italic 12.5px/1.2 var(--font); color: var(--text-2); }
+.at-key-mag { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.at-key-mag em { color: var(--at-gold); }
+.at-key-i { display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: oldstyle-nums; }
+.at-key-i svg { width: 18px; height: 18px; flex: none; }
+.at-key-i svg[viewBox="0 0 26 10"] { width: 26px; height: 10px; }
+.at-key-i path { fill: none; stroke: rgba(240, 217, 150, 0.7); stroke-width: 1.2; }
+.at-key-i .core { fill: #fff8e4; }
+.at-key-i circle.bad { fill: none; stroke: var(--bad); stroke-dasharray: 3 2; stroke-width: 1.2; }
+.at-key-base { font-style: normal; font-size: 12px; color: var(--text-3); }
+
+/* ── catalogue ── */
+.at-cat-wrap { overflow-x: auto; }
+.at-cat { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.at-cat th { padding: 6px 8px; text-align: start; font: italic 500 12.5px/1.2 var(--font); color: var(--at-gold); border-top: 1px solid var(--at-hair-2); border-bottom: 3px double var(--at-hair-2); white-space: nowrap; }
+.at-cat td { padding: 7px 8px; border-bottom: 1px dotted var(--at-hair); }
+.at-cat .num { text-align: end; font-variant-numeric: oldstyle-nums tabular-nums; }
+.at-cat td.bad { color: var(--bad); }
+.at-cat td.at-g { width: 34px; font: italic 16px/1 var(--font-display); color: var(--at-gold); }
+.at-cat-name { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 360px; }
+.at-cat-name svg { width: 14px; height: 14px; flex: none; }
+.at-cat-name circle { fill: #fff8e4; }
+.at-cat tr.on td { background: rgba(217, 184, 102, 0.1); }
+.at-cat tr.on .at-cat-name { color: var(--at-gold-2); }
+.at-cat tr.on .at-cat-name circle { filter: drop-shadow(0 0 3px rgba(240, 217, 150, 0.9)); }
+
+/* ── accounts as a magnitude legend ── */
+.at-leg { display: flex; flex-direction: column; }
+.at-leg-row { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.5fr) auto; gap: 12px; align-items: center; padding: 9px 2px; border-bottom: 1px dotted var(--at-hair); }
+.at-leg-name { font-variant: small-caps; letter-spacing: 0.08em; font-size: 14.5px; }
+.at-leg-stars { display: flex; flex-wrap: wrap; gap: 2px; }
+.at-leg-stars > span { display: inline-grid; }
+.at-leg-n { font-style: italic; font-size: 12.5px; color: var(--text-2); white-space: nowrap; font-variant-numeric: oldstyle-nums; }
+.at-leg-n.bad { color: var(--bad); }
+.at-gl { width: 16px; height: 16px; }
+.at-gl.ok path { fill: var(--at-gold-2); filter: drop-shadow(0 0 2px rgba(240, 217, 150, 0.8)); }
+.at-gl.warn path { fill: var(--at-gold); opacity: 0.8; }
+.at-gl.limited circle { fill: none; stroke: var(--warn); stroke-width: 1.4; }
+.at-gl.dead circle { fill: none; stroke: var(--bad); stroke-width: 1.4; }
+.at-gl.dead path { stroke: var(--bad); stroke-width: 1.4; }
+.at-gl.off circle { fill: var(--text-3); }
+.at-leg-key { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--at-hair); font: italic 12px/1 var(--font); color: var(--text-3); }
+.at-leg-key span { display: inline-flex; align-items: center; gap: 4px; }
+.at-leg-key .at-gl { width: 13px; height: 13px; }
+.at-leg-foot { margin-top: 10px; font-style: italic; color: var(--bad); font-size: 12.5px; }
+
+/* ── observation log ── */
+.at-log { display: flex; flex-direction: column; }
+.at-lrow { display: grid; grid-template-columns: 58px minmax(0, 0.8fr) minmax(0, 1.4fr) 44px 58px; gap: 10px; align-items: baseline; padding: 6px 2px; border-bottom: 1px dotted var(--at-hair); font-size: 13px; animation: atRow calc(600ms * var(--t)) ease-out; }
+.at-log.still .at-lrow { animation: none; }
+@keyframes atRow { from { opacity: 0; background: rgba(217, 184, 102, 0.12); } }
+.at-lt, .at-lms { color: var(--text-3); font-variant-numeric: oldstyle-nums tabular-nums; }
+.at-lms { text-align: end; }
+.at-lapp { font-style: italic; color: var(--at-gold); }
+.at-lto i { color: var(--text-3); font-style: normal; }
+.at-lst { font-variant: small-caps; color: var(--ok); text-align: end; }
+.at-lrow.bad .at-lst, .at-lrow.bad .at-lto { color: var(--bad); }
+@media (max-width: 760px) { .at-lrow { grid-template-columns: 52px minmax(0, 1fr) minmax(0, 1fr); } .at-lst, .at-lms { display: none; } }
+
+/* ── gallery thumbnail ── */
+.th-at { height: 100%; background: radial-gradient(ellipse at 70% 20%, #1a2560, #0a1030 70%); }
+.th-at svg { width: 100%; height: 100%; display: block; }
+.th-at .g { fill: none; stroke: rgba(217, 184, 102, 0.28); stroke-width: 0.8; }
+.th-at polyline { fill: none; stroke: rgba(240, 217, 150, 0.6); stroke-width: 0.9; }
+.th-at circle { fill: #fff8e4; }
+.th-at circle.on { filter: drop-shadow(0 0 4px #f0d996); }
+.th-at rect { fill: rgba(9, 14, 42, 0.9); stroke: #d9b866; stroke-width: 0.8; }

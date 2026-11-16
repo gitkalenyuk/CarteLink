@@ -1,189 +1,144 @@
 # CarteLink — instructions for Claude Code
 
-Локальний AI-шлюз (Go) від YouTube Cartel, версія **2.8.0**. Вихідний код CLIProxyAPI
-вкомпільовано в бінарник (`third_party/CLIProxyAPI`, `go.mod replace`). UI — вбудовані
-статичні файли в `internal/web/ui`. Користувач пише українською — відповідай українською.
-Історія назв: VisionGateGo → CartelGate (2.0) → **CarteLink** (2.1+). Змін див. `CHANGELOG.md`.
+Локальний AI-шлюз від YouTube Cartel, версія **3.0.0**, написаний на **Rust** (edition 2024).
+Рушій CLIProxyAPI (Go, `third_party/CLIProxyAPI`) вшитий у той самий exe: `build.rs` збирає
+`enginehost/` під ціль, стискає zstd і вбудовує; при старті рушій розпаковується в `data/bin/`
+і працює прихованим дочірнім процесом на внутрішньому loopback-порту. UI — статичні файли `ui/`
+(вбудовуються `include_dir`). Користувач пише українською — відповідай українською.
+Історія назв: VisionGateGo → CartelGate (2.0) → CarteLink (2.1+), Go → Rust у 3.0. Змін див. `CHANGELOG.md`.
 
 ## Карта коду
 
 | Шлях | Що там |
 |---|---|
-| `main.go` | Старт: одна копія, конфіг, лог, порт на сесію, root-middleware (пауза, мапінг, `/v1/models`), вікно/консоль |
-| `routing.go` | Мапінг моделей: рівні / таблиця / «розумний» fallback. **Лише точні збіги та явні префікси** |
-| `scoped.go` | Обмеження API-ключів із власними моделями (перевірка в root-middleware) |
-| `localaccess.go` | Іншим пристроям — лише API моделей (`networkAllowedPath`, білий список); панель, `/api/*`, Management API — лише з цього комп'ютера |
-| `internal/config/` | `config.json`: схема, міграції (schema 2), `Normalize`, атомарний `Save`, `TierAliases` |
-| `internal/cliproxy/` | Вбудований рушій + `SyncConfigYAML` (керовані ключі `config.yaml`) |
-| `internal/web/server.go` | `App`: стан, порт сесії (`EffectivePort`), кеш моделей (`IsKnownModel`) |
-| `internal/web/handlers_*.go`, `routes.go` | Control API `/api/*` (конфіг, сервер, OAuth, метрики, `/app/*`) |
-| `internal/web/handlers_scoped.go` | `/api/scoped-keys`: створення, зміна, видалення таких ключів |
-| `internal/web/metrics_store.go` | Статистика: бекенд сам вичитує `usage-queue` → `data/metrics.json` |
-| `internal/web/limits.go` | Ліміти акаунтів: `GET /api/limits` (сигнали рушія Codex/Claude → вікна 5 год/тиждень, квоти плагінів з кешем 5 хв) |
-| `internal/web/errlog.go` | Журнал помилок запитів → `data/errors.jsonl` (перехоплює root-middleware в `main.go`) |
-| `internal/web/handlers_models.go` | `/api/routing/apply-all`, `/api/switcher*`, `/api/errors*` |
-| `internal/desktop/switcher_windows.go` | Плаваючий перемикач: друге WebView2-вікно (TOPMOST, TOOLWINDOW), закриття = сховати |
-| `internal/desktop/` | Вікно: WebView2 + трей (Windows), WKWebView cgo (`gui_darwin.go`), автозапуск (`autostart_*.go`) |
-| `internal/instance/` | Одна копія: `instance.json` + `/api/app/ping`, `/api/app/show` |
-| `internal/web/ui/` | `index.html`, `app.js`, `style.css`, `presets.js` (70+ провайдерів), `clients.js` (24 програми), `switcher.*` (перемикач), `i18n.js` + `i18n/<lang>.js` (переклади) |
-| `scripts/` | `mac-setup.sh` (перевірка), `build-mac-app.sh` (`.app` + 3 `.dmg`) |
-| `INSTALL-MACOS.md`, `INSTALL-MACOS-AI.md` | Встановлення на Mac: для людей / промпт для ШІ-агента |
+| `src/main.rs` | Старт: аргументи, одна копія, конфіг, лог (`app.log`), порт на запуск, запуск рушія, вікно або headless, `shutdown()` |
+| `src/proxy.rs` | Шлюз (fallback-хендлер): `local_gate`, `/healthz`, пауза, ключі, scoped-обмеження, переписування тіла, `/v1/models`, стрімінг без буферизації (`Tee`), WebSocket upgrade, живі події |
+| `src/routing.rs` | Мапінг моделей: рівні / таблиця / «розумний» fallback. **Лише точні збіги та явні `*`** |
+| `src/scoped.rs` | Ключі клієнтів: `identify` (повні, scoped `cl-api-`, відкритий режим), білий список шляхів scoped-ключа |
+| `src/prompting.rs` | Системний промпт / AGENT.md, `normalize_effort`, думання суфіксом `model(level)` |
+| `src/engine.rs` | Рушій: розпаковка, запуск (`CREATE_NO_WINDOW`, Job Object), healthz, супервізор з backoff, `sync_config_yaml` |
+| `src/app.rs` | Спільний стан `App` (`app()`): конфіг (`ArcSwap` + `update_config`), `mgmt()`, каталог моделей, події (broadcast) |
+| `src/api.rs` | Control API `/api/*` (див. `router()`), `delete_accounts`, `switcher_auto_advance`, інспектор, engine-tuning, stats |
+| `src/api2.rs` | `/api/connect` (+undo), `/backup`, `/restore`, `/accounts/check`, `/accounts/policy`, `/notify`, `/devices/lan`, `/qr` |
+| `src/connect.rs` / `src/backup.rs` / `src/apps.rs` | Підключення програм одним кліком (`CARTELINK_CLIENT_HOME` — інша папка для тестів) / zip-бекап / назва програми з User-Agent |
+| `src/limits.rs` | Стани й ліміти акаунтів (`ok warn limited error invalid disabled`), квоти плагінів |
+| `src/metrics.rs` / `src/errlog.rs` | Статистика (`usage-queue` → погодинно 31 день, `key_stats`) / журнал помилок `errors.jsonl` |
+| `src/caps.rs` | Можливості моделей з `/_cartelink/caps` рушія (фоном, без мережі на шляху запиту) |
+| `src/tasks.rs` | Фонові цикли: usage-queue, каталог/caps, бекап `config.yaml`, автосинхронізація акаунт→провайдер, автоочищення акаунтів |
+| `src/gui.rs` | Вікно (wry/tao), трей (tray-icon), плаваючий перемикач; меню Edit на macOS (інакше Cmd+C/V не працюють) |
+| `src/server.rs` / `src/routes.rs` | Слухач (перезапуск на іншу адресу без простою), маршрути `/`, `/ui/*`, `/api/*`, fallback → proxy |
+| `src/config.rs` / `src/paths.rs` | `config.json` (schema 3, невідомі ключі зберігаються), шляхи даних, атомарний запис |
+| `enginehost/main.go` | Go-хост рушія: SDK-сервіс, linkname-апдейтери каталогу моделей і версії Antigravity, `/_cartelink/{info,caps}` за секретом |
+| `ui/js/core.js` | Спільне API UI (`CL.api`, `CL.mgmt`, `CL.config.patch`, `CL.models`, `CL.ui.*`, діалоги, контракт `CL.page`) |
+| `ui/js/look.js` | Теми, редактор «Свій дизайн», ефекти фону, режим «Налаштувати вигляд» (перетягування/ширина/приховування блоків і пунктів меню) |
+| `ui/js/shell.js` | Меню, маршрутизація (`#/page`), статус, Ctrl+K, завантаження |
+| `ui/js/pages/*.js` | Сторінки; `ui/switcher.*` — плаваючий перемикач; `ui/js/data/` — `presets.js`, `clients.js`, `prices.js` (ціни API для «Скільки б коштувало») |
+| `scripts/` | `mac-setup.sh`, `build-mac-app.sh` (`.app` + 3 `.dmg`) |
 
-## Сторінки UI
-Дизайн-система — `DESIGN.md` (темна консоль, один кораловий акцент, іконки-спрайт `#i-*` в
-`index.html` через `ic(name)` в `app.js`, без емодзі-іконок); продукт — `PRODUCT.md`.
-Сайдбар: Шлюз (Огляд, Моделі, Акаунти, API-ключі, Статистика) · Керування (Підключити програму, Провайдери,
-Плагіни, Системний промпт, Налаштування, Довідка).
-Огляд (модель зараз + швидке перемикання/пресети, шлюз з адресою й ключем, ліміти акаунтів, KPI,
-графік 24 год, останні помилки; майстер «3 кроки» ховається, коли все зроблено) · Підключити програму (інструкції
-PowerShell/CMD/bash + файли) · Акаунти (OAuth) · Моделі (режими «Рівні»/«Таблиця»,
-модель за замовчуванням, «Невідомі моделі», черговість акаунтів) · Провайдери (OpenAI-сумісні,
-рідні ключі, акаунти-провайдери) · Статистика · Налаштування (автозапуск, трей, доступ,
-шлюз, чорний список, розширені) · Довідка.
-
-## Ліміти й дизайни
-- Ліміти: UI бере все з `GET /api/limits` (`limits.go`) і сам заголовки провайдерів не розбирає. Відсотки є лише там,
-  де їх повідомляє провайдер (Codex `x-codex-primary/secondary-*`, Claude `anthropic-ratelimit-unified-*`, плагіни з
-  `supports_quota`); решта акаунтів мають лише стан. Поля `cooldowns` в `auth-files` рушія 7.x немає — стан рахувати з
-  `unavailable` / `next_retry_after` / `status_message` (`accountState` в `app.js`).
-- Дизайни: `data-theme` на `<html>` (`glass`, `terminal`; без атрибута — «Консоль»), лише перевизначення токенів у кінці
-  `style.css`. Зберігається в `config.json → desktop.theme` (`config.ValidTheme`) і дублюється в `localStorage`, щоб не блимало
-  при старті. Новий дизайн = блок токенів + плитка в `#themePicker` + назва в `ValidTheme` і `THEMES`.
-- До свого рушія ходити через `a.selfBaseURL()` / `a.engineAddr()` (адреса, де він слухає зараз); `EffectivePort()` — це
-  порт з налаштувань, який почне діяти після перезапуску.
+## UI: правила
+- Дизайн-система: `ui/css/app.css` (токени на `:root` = «Графіт», компоненти, оболонки `data-shell` sidebar/topbar/rail).
+  **Дизайн ≠ тема**: 14 дизайнів, кожен — композиція: `ui/js/designs/<id>.js` (`CL.design({id, shell, mode, home, viz,
+  widgets, titles, fx, thumb})`, контракт у `ui/js/design.js`) + `ui/css/designs/<id>.css` (усе під `html[data-theme="<id>"]`).
+  Віджети беруть дані з `CL.data` (`ui/js/data.js`) і перемальовуються на місці, без перебудови DOM.
+  Новий дизайн = 2 файли + теги в `index.html` + `config::THEMES`. Іконки — спрайт `#i-*` в `index.html` через `CL.ic()`, без емодзі.
+- Сторінка = `CL.page(id, {title, icon, group, order, render(root, ctx)})`; вміст — `.blocks[data-area]` з
+  `.block[data-block][data-w][data-title]` (користувач переставляє/ховає). Таймери й підписки — через `ctx`.
+- Конфіг з UI — лише `CL.config.patch(...)` (JSON merge patch, `null` видаляє ключ мапи) або окремі ендпоінти.
+  Ніяких `window.confirm/alert/prompt` — `CL.confirm/CL.prompt/CL.dialog`. Моделі — `CL.ui.modelPicker`.
+- Вигляд і розташування: `config.json → ui` (`/api/ui-prefs`) + дзеркало в localStorage (`cl.prefs`, `cl.look`).
+- Розробка UI без перезбірки: `CARTELINK_UI_DIR=<repo>\ui` (в `.claude/launch.json` → `cartelink-dev`).
 
 ## Локалізація
-- Джерело — українські рядки прямо в HTML/JS; вони ж ключі словника `i18n/<lang>.js`
-  (`window.I18N_DICT = {"<uk>": "<переклад>"}`). `i18n.js` перекладає DOM сам
-  (MutationObserver: текст + title/placeholder/data-tip/label). Рядки зі значеннями —
-  лише через `t('… {name} …', {name})`, ніколи не склеювати `'текст ' + x`. `confirmDo` вже перекладає.
+- Джерело — українські рядки прямо в HTML/JS; вони ж ключі словника `ui/i18n/<lang>.js`
+  (`window.I18N_DICT = {"<uk>": "<переклад>"}`). `ui/js/i18n.js` перекладає DOM сам (MutationObserver).
+  Рядки зі значеннями — лише `t('… {name} …', {name})`, ніколи не склеювати.
 - 16 мов: en zh hi es fr ar bn pt ur id de ja tr ko vi pl (ar/ur — RTL). Російської немає й не додавати.
-- Після зміни текстів: оновити переклади всіх мов (нові ключі без перекладу показуються українською).
-- Трей: `internal/desktop/traytext.go`; мова зберігається в `config.json → desktop.lang`.
+- Після зміни текстів: оновити переклади всіх мов. Скрипти: `Desktop\CarteLink_extras\i18n\extract.js`
+  (які рядки відсутні) і `merge.js` (злиття з перевіркою плейсхолдерів).
+- Трей: `src/traytext.rs`; мова — `config.json → desktop.lang`.
+
+## Ключі
+- Рушій приймає **лише** внутрішній ключ CarteLink (`cl-internal-…`, новий на кожен запуск). Ключ клієнта
+  (основний `apiKey`, додаткові `cliproxy.apiKeys`, scoped `scopedKeys`) перевіряє `scoped::identify`, потім
+  проксі прибирає `Authorization/x-api-key/x-goog-api-key/?key=/?auth_token=` і ставить внутрішній.
+- Scoped-ключ має пріоритет над повним у тому ж запиті; без запису — 401; `enabled:false` — 401.
+- `scoped_allowed_path` — білий список; тіло scoped-запиту завжди кодується заново (дублікат `model`).
 
 ## Системний промпт і думання
-- `config.json → prompting` (`config.Prompting`): текст, AGENT.md, режим prepend/append/replace, scope,
-  `thinking` (рівень/бюджет/override). Інжекцію робить `prompting.go` з `rewriteModel` (main.go) — per request.
-- Думання лише для моделей з підтримкою: `internal/web/modelcaps.go` читає реєстр рушія через
-  `sdkcliproxy.GlobalModelRegistry()` (поле `Thinking`: min/max або levels); `GET /api/model-info`.
-  Значення йде суфіксом `model(level|budget|none|auto)` — рушій (`internal/thinking`) сам валідує й конвертує.
-  Не писати поля thinking/reasoning у тіло вручну. Живий тест: `Desktop\CarteLink_extras\tests\thinktest.js`.
-- Автоперемикання пресетів: `Switcher.AutoSwitch/AutoArmed`, хук успішної відповіді в root-middleware →
-  `App.SwitcherAutoAdvance` (одноразово; перемикання на пресет 1 знову «заряджає»).
-- «Замінити» для `/v1/responses` прибирає й developer/system-повідомлення з `input` (там Codex тримає
-  свій справжній промпт).
-- Контекстні вікна: `ModelCaps.Context/MaxOutput` (найменше серед акаунтів з тією ж моделлю);
-  `GET /api/model-context?model=` (через `App.SetModelResolver`). Claude Code читає лише суфікс `[1m]` —
-  його ставить `claudePickerEntries`, коли вікно ≥ 1M; `strip1M` у `resolveModel` прибирає маркер.
-  Codex — `model_context_window` у `clients.js` (`{{CTX}}`/`{{CTX_COMPACT}}`). `/v1/models?client_version=`
-  (каталог Codex) віддається рушієм без змін.
-- Тест наскрізно: `Desktop\CarteLink_extras\tests\prompttest.js` + ехо-провайдер (`%TEMP%\cl-echo-provider.js`).
+- `config.json → prompting`. Інжекцію робить `proxy::rewrite_body` → `prompting.rs`, per request.
+- Думання лише для моделей з підтримкою (`caps.thinking`); значення суфіксом `model(level|budget|none|auto)`,
+  рушій сам валідує. Не писати поля thinking/reasoning у тіло вручну.
+- Автоперемикання пресетів: `Switcher.autoSwitch/autoArmed` → `api::switcher_auto_advance` (порівнює базові імена).
+- Контекст: `ModelCaps.context/maxOutput`; Claude Code бачить `[1m]` (ставить `claude_picker_entries` при ≥1M).
 
-## API-ключі з власними моделями
-- `config.json → scopedKeys` (`config.ScopedKey`), префікс `cl-api-`. Запис — лише через `/api/scoped-keys`; `apiConfigSave` їх не змінює.
-- Ключ із префіксом без запису в конфігу завжди відхиляється (401) і прибирається з `config.yaml`: він не має стати ключем без обмежень.
-- `scopedAllowedPath` — білий список: новий маршрут рушія закритий, доки в ньому не перевіряється модель. `requestKeys` має збігатися з місцями ключа в `config_access/provider.go` рушія.
-- Тіло запиту завжди кодується заново: Go бере останній дублікат `model`, рушій — перший.
+## Плагіни рушія
+- `sync_config_yaml` пише `plugins.enabled: true` і `plugins.dir`; `plugins.configs` належить рушію — не чіпати.
+- Встановлення через Management API (`/plugin-store/:id/install`), вхід — `/<provider>-auth-url`.
+- UI: `PLUGIN_SERVICES`, `PLUGIN_LOGIN`, `PLUGIN_SAFE_CONFIG`, `HIDDEN_PLUGINS` (`opencode-cloak`), `PLUGIN_NO_BUILD`
+  — у `ui/js/pages/accounts.js` (`window.CL_PLUGINS`). Один активний плагін на сервіс.
+- Kiro відповідає `INVALID_MODEL_ID` на моделі поза тарифом — `autofix::auto_hide_model` ховає її для провайдера.
+- Робоча папка рушія = `data/cliproxy`.
 
-## Плагіни рушія (нові типи акаунтів)
-- `SyncConfigYAML` пише `plugins.enabled: true` і `plugins.dir` = `data/cliproxy/plugins`;
-  `plugins.configs` належить рушію (встановлення з магазину, конфіги плагінів) — не чіпати.
-- Встановлення: `POST /plugin-store/:id/install` (DLL windows/amd64 з GitHub Releases), без
-  перезапуску; вхід — `GET /<provider>-auth-url` (NoRoute → плагін), статус — `get-auth-status`.
-- UI: `PLUGIN_SERVICES` в `app.js` (сервіс → плагіни на вибір; плагіни-провайдери поза списком
-  додаються самі), сторінка «Плагіни» — весь магазин. Вхід: `PLUGIN_LOGIN` → `supports_oauth` →
-  консоль (`menus`) → форма `config_fields`. Один активний плагін на сервіс.
-- `HIDDEN_PLUGINS` ховає `opencode-cloak` (маскує трафік під Claude Code). `PLUGIN_NO_BUILD` — плагіни без збірки під ОС,
-  оновлювати за релізами. `PLUGIN_SAFE_CONFIG` пишеться один раз перед першим входом: `workbuddy`
-  інакше видаляє Global-акаунт без кредитів і сам нараховує щоденні кредити.
-- Kiro (Builder ID) показує статичний список з 10 моделей, а тариф акаунта дозволяє менше — Kiro
-  відповідає `INVALID_MODEL_ID`. `internal/web/autohide.go` ховає таку модель для провайдера
-  (`oauth-excluded-models`) після першої відмови; тест по акаунтах — `CarteLink_extras\tests\kirotest.js`.
-- Робоча папка процесу = `data/cliproxy` (деякі плагіни пишуть дані відносно неї).
-- Каталог моделей рушія оновлюється з мережі через `internal/cliproxy/models_updater.go`
-  (`go:linkname` на `registry.StartModelsUpdater` — апстрім запускає його лише у своєму main).
+## Акаунти
+- `GET /api/accounts` (= `/api/limits`): стан `invalid` = вхід відхилено (401/403/invalid_grant/revoked…) — сам не мине.
+- `POST /api/accounts/delete {names[] | filter: broken|invalid|error|disabled|limited|all}` → DELETE `auth-files` рушія
+  одним запитом + прибирає провайдер-записи `cp-<fam>-<short>`. `POST /api/accounts/toggle`, `/api/accounts/reset`.
+- Автоочищення (`config.json → accounts.autoClean/autoCleanHours`, типово вимкнено): лише стан `invalid`,
+  тривалість — `data/account-health.json`. Акаунти на ліміті не видаляються ніколи.
 
 ## Доступ без входу
-- Вхід через Telegram прибрано (2026-11-12, рішення користувача): програма доступна всім — запустив і працює.
-  Гейта, брокера, `config.json → auth` і тегу `devnoauth` більше немає; старий ключ `auth` у `config.json`
-  ігнорується й зникає при першому збереженні. Не повертати.
-- `#gate` в `index.html` — лише заставка запуску (`revealApp` → `body.booted`).
+- Вхід через Telegram прибрано (2026-11-12, рішення користувача). Не повертати. Ключ `auth` у `config.json` прибирається.
 
 ## Поведінка «налаштував і забув»
-- Порт фіксований **8317**. Зайнятий → інший порт лише на цей запуск (не зберігається);
-  `--port N` теж лише на запуск. Змінити назавжди — Налаштування → Шлюз.
-- Host може бути конкретною адресою: тоді рушій не слухає loopback. До свого рушія ходити лише через `engineBaseURL` (`internal/web/server.go`), не через жорсткий `127.0.0.1`.
-- Одна копія: повторний запуск показує вікно першої й виходить.
-- Windows: закриття вікна → трей (вимикається в Налаштуваннях); вийти — трей → «Вийти».
-- Автозапуск: Windows `HKCU\…\Run` (`--minimized`), macOS LaunchAgent, Linux XDG.
-- Mac: трею немає — закриття вікна завершує програму. Плаваючий перемикач — лише Windows
-  (на macOS опція схована: `desktop.SwitcherSupported()`).
+- Порт фіксований **8317**. Зайнятий → інший порт лише на цей запуск; `--port N` теж лише на запуск.
+- Host може бути конкретною адресою. Панель і `/api` — лише з цього комп'ютера (`proxy::local_gate`,
+  `network_allowed_path` — білий список), control API — лише same-origin (`proxy::same_origin`).
+- Одна копія: `instance.json` + `/api/app/ping`, `/api/app/show`.
+- Закриття вікна → трей (Windows і macOS), вимикається в Налаштуваннях. Плаваючий перемикач — Windows і macOS.
+- Автозапуск: Windows `HKCU\…\Run` (`--minimized`), macOS LaunchAgent, Linux XDG (`src/autostart.rs`).
+- Рушій упав → супервізор перезапускає (1→30 с), запис у журнал помилок.
 
 ## Дані користувача (не в репо)
-`%AppData%\CarteLink` (Windows), `~/Library/Application Support/CarteLink` (macOS);
-`CARTELINK_HOME` переносить папку. Міграція з `CartelGate` / `VisionGateGo` (без кешів і
-Electron-мотлоху).
-- `config.json` — ключ шлюзу, маршрутизація, чорний список, вікно
-- `data/cliproxy/config.yaml` — ключі провайдерів і рідні ключі (рушій)
-- `data/cliproxy/auths/*.json` — OAuth-акаунти; `data/cliproxy/logs/app.log` — лог
-- `data/metrics.json` — статистика; `instance.json` — запущена копія
+`%AppData%\CarteLink` (Windows), `~/Library/Application Support/CarteLink` (macOS); `CARTELINK_HOME` переносить папку.
+`config.json`, `data/cliproxy/{config.yaml,auths,plugins,logs}`, `data/metrics.json`, `data/errors.jsonl`,
+`data/account-health.json`, `data/bin/` (розпакований рушій), `data/webview/`, `instance.json`.
 Файли не шифруються — не просити користувача пересилати цю папку.
 
 ## Що робити на macOS
 
 Без Mac: `gh workflow run mac-build.yml` збирає `.dmg` на GitHub Actions (артефакт `CarteLink-mac`).
 
-Виконай кроки по порядку, не питаючи підтвердження на кожен крок:
-
-1. **Залежності.** `git`, Go ≥ 1.27, `node` (перевірка JS), **Xcode Command Line Tools**
-   (`xcode-select --install`) — потрібні для нативного вікна (cgo). Homebrew: `brew install go node`.
-2. **Код:** `git clone https://github.com/gitkalenyuk/CarteLink.git && cd CarteLink`
-   (якщо вже є — `git pull`).
-3. **Перевірка:** `bash scripts/mac-setup.sh` — build, vet, test, `node --check`, бінарник `./cartelink`.
-4. **Реліз:** `bash scripts/build-mac-app.sh` → `dist/CarteLink.app` (universal, WKWebView,
-   ad-hoc підпис, macOS 13+) і три `.dmg` для людей: `CarteLink-<версія>.dmg` (universal),
-   `-apple-silicon.dmg`, `-intel.dmg`. Реліз — у приватний `gitkalenyuk/CarteLink`, тег
-   `v<версія>-mac`, разом з `INSTALL-MACOS.md` і `INSTALL-MACOS-AI.md`.
-   `gui_darwin.go` (cgo) на Windows не компілюється — перша реальна перевірка саме тут;
-   якщо збірка падає, виправляй `internal/desktop/gui_darwin.go`.
-5. **Перевір наживо:** `open dist/CarteLink.app`, потім
-   `curl -s http://127.0.0.1:8317/api/status` → `"version":"2.8.0"`. Перевір Cmd+C/Cmd+V у вікні.
+1. **Залежності.** `git`, Rust (rustup), Go ≥ 1.27, `node`, Xcode Command Line Tools (`xcode-select --install`).
+2. **Код:** `git clone https://github.com/gitkalenyuk/CarteLink.git && cd CarteLink` (якщо вже є — `git pull`).
+3. **Перевірка:** `bash scripts/mac-setup.sh` — тести, clippy, `node --check`, `./cartelink`.
+4. **Реліз:** `bash scripts/build-mac-app.sh` → `dist/CarteLink.app` (universal) і три `.dmg`. Реліз — у приватний
+   `gitkalenyuk/CarteLink`, тег `v<версія>-mac`, разом з `INSTALL-MACOS.md` і `INSTALL-MACOS-AI.md`.
+5. **Перевір наживо:** `open dist/CarteLink.app`, потім `curl -s http://127.0.0.1:8317/api/status` → `"version":"3.0.0"`.
+   Перевір Cmd+C/Cmd+V у вікні.
 
 ## Правила проєкту
 
-- Збірка Windows: `go build -trimpath -ldflags "-s -w -H=windowsgui" -o CarteLink.exe .`
-  Якщо запущений CarteLink використовується самою сесією Claude — збирай поруч під іншим іменем.
-  Готові збірки класти в `Desktop\CarteLink_extras\builds\`.
-- Перевірки: `go vet . ./internal/...`, `go test . ./internal/...`,
-  `GOOS=darwin CGO_ENABLED=0 go vet . ./internal/...`, `node --check internal/web/ui/*.js`.
-- Тест UI наживо: `.claude/launch.json` → `cartelink-dev` (білд у `%TEMP%\cl-dev`,
-  ізольований `CARTELINK_HOME`, порт 8419). GUI-тести — теж з ізольованим `CARTELINK_HOME`;
-  реєстр (автозапуск) після тесту повертати як було.
-- `third_party/CLIProxyAPI` — чистий реліз апстріму (зараз **7.3.20**, без .github/assets/auths/examples;
-  оновлення = заміна теки на новий тег + `UpstreamVersion` в `internal/cliproxy/embedded.go`).
-  Рушій 8.x має шлях модуля `/v8` — для нього замінити `/v7` в імпортах, go.mod і linkname.
-- `third_party/CLIProxyAPI` не редагувати — це апстрім (MIT); зміни лише в `internal/`,
-  `main.go`, `routing.go` через middleware/конфігуратор.
-- `config.yaml` має страховку: `config.yaml.bak` (остання справна копія, кожні 5 хв і при синхронізації);
-  порожній/зламаний файл відновлюється з неї (`SyncConfigYAML`), не стирати цю логіку.
-- Живі тести на реальному застосунку: `DesktopCarteLink_extras	estsmodeltest.js` (кожна модель кожного
-  акаунта, маршрутизацію тимчасово ставить у passthrough і повертає) і `functest.js` (формати API, аліаси, UI-API).
-- Керовані ключі `config.yaml` (host, port, secret, auth-dir, api-keys, claude-code,
-  redis-usage-queue-retention-seconds) пише `SyncConfigYAML`; решту — Management API рушія.
-- Management API: PUT для списків (`openai-compatibility`, `*-api-key`, `api-keys`)
-  **замінює** весь список — завжди GET → змінити → PUT (або PATCH за `name`). GET рідних
-  ключів повертає `{"<kind>": [...]}`, PUT приймає голий масив.
-- Конфіг з UI — тільки через `saveConfig()` в `app.js` (черга + перевірка відповіді);
-  небезпечні дії — через `confirmDo()`.
-- Префікс `провайдер:` у назві моделі знімає лише `config.StripProviderPrefix` (відомі провайдери): справжні id теж мають
-  двокрапку (`qwen3:32b`).
-- Мапінг: ніяких підрядків (баг 2.2.0: правило `mini` ловило всі `gemini-*`). Нові аліаси —
-  у `config.TierAliases`. Нових провайдерів з API-ключем — у `presets.js`, нових програм — у `clients.js`.
-- `usage-queue` вичитує **лише** бекенд (`metrics_store.go`) — UI не має туди ходити.
-- Не комітити бінарники, `data/`, `dist/`, логи, `.py`, картинки (див. `.gitignore`).
-- Git: коміти на `main`, `origin` = приватний `gitkalenyuk/CarteLink`. `CartelGateGo` —
-  архів (remote `cartelgatego`, не пушити). Публічний `gitkalenyuk/cartelgate` — лише для
-  релізних білдів, код туди не пушити. Оновлення роздаються вручну, авто-оновлювача немає.
-- JevRouter видалено назавжди (2026-09-22) — не повертати.
-- Зайве (тестові скрипти, картинки, старі збірки, бекапи) — поза репо: `Desktop\CarteLink_extras\`.
-- OpenCode (Zen/Go) підключається лише через плагіни магазину (рішення користувача, 2026-10-30).
+- Збірка: `cargo build --release` (потрібні Rust і Go). Exe: `target/release/cartelink.exe` → копіювати в
+  `Desktop\CarteLink_extras\builds\CarteLink_v<версія>.exe`. Якщо запущений CarteLink використовується сесією
+  Claude — тестуй окрему копію з ізольованим `CARTELINK_HOME` і `--port`.
+- Швидка збірка без Go: `CARTELINK_ENGINE_BIN=<готовий engine.exe> cargo build`.
+- Перевірки: `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt --check`, `go vet ./enginehost`, `node --check ui/js/**/*.js`.
+- Сучасний Rust: let-chains, `jiff` для часу, `getrandom` для ключів, `serde_norway` для YAML (не `serde_yaml`/`serde_yml`).
+- Тест UI наживо: `.claude/launch.json` → `cartelink-dev` (білд у `%TEMP%\cl-dev`, ізольовані `CARTELINK_HOME` і
+  `CARTELINK_CLIENT_HOME` — «Підключити одним кліком» не чіпає справжні ~/.claude і ~/.codex; порт 8419). Наскрізні тести:
+  `node Desktop\CarteLink_extras\tests\e2e3.js` (проти 8419, 66 перевірок).
+- `third_party/CLIProxyAPI` — чистий реліз апстріму (зараз **7.3.20**); оновлення = заміна теки + `UpstreamVersion`
+  в `enginehost/main.go`. Рушій 8.x — шлях модуля `/v8` (імпорти, go.mod, linkname). Не редагувати апстрім.
+- `config.yaml` має страховку `config.yaml.bak`; порожній/зламаний файл відновлюється (`sync_config_yaml`).
+  Керовані ключі: host, port, remote-management, auth-dir, api-keys, claude-code.disable-cloaking-model-list,
+  plugins.enabled/dir, usage-statistics, redis-usage-queue-retention-seconds. Bcrypt-хеш секрету рушія не
+  перезаписується, поки секрет той самий (`.secret-mark`).
+- Management API: PUT для списків замінює весь список — завжди GET → змінити → PUT (або PATCH за `name`).
+- Префікс `провайдер:` знімає лише `config::strip_provider_prefix` (відомі провайдери): `qwen3:32b` лишається.
+- Мапінг: ніяких підрядків. Нові аліаси — у `config::TIER_ALIASES`. Провайдери з API-ключем — у `presets.js`, програми — у `clients.js`.
+- `usage-queue` вичитує **лише** бекенд (`tasks::metrics_loop`).
+- Не комітити бінарники, `target/`, `data/`, `dist/`, логи, `.py`, картинки (див. `.gitignore`).
+- Git: коміти на `main`, `origin` = приватний `gitkalenyuk/CarteLink`. `CartelGateGo` — архів (не пушити).
+  Публічний `gitkalenyuk/cartelgate` — лише для релізних білдів. Авто-оновлювача немає.
+- JevRouter видалено назавжди (2026-09-22) — не повертати. OpenCode (Zen/Go) — лише через плагіни магазину.
+- Зайве (тестові скрипти, картинки, старі збірки) — поза репо: `Desktop\CarteLink_extras\`.

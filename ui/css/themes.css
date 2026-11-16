@@ -1,0 +1,11 @@
+/* Shared by every design: interface toggles, gallery tiles, generic effects.
+   Each design's own look lives in ui/css/designs/<id>.css. */
+
+/* ── interface toggles (Settings → Інтерфейс) ── */
+body.hide-statusPill #statusPill, body.hide-cmdk #cmdkBtn, body.hide-editBtn #editBtn, body.hide-navGroups .nav-group-title,
+body.hide-navBadges .nav-badge, body.hide-sideVersion #sideVersion, body.hide-brand .brand, body.hide-toasts .toast.ok { display: none !important; }
+body.hide-tips .tipbox { display: none !important; }
+
+/* ── gallery tiles ── */
+.theme-tile .prev { position: relative; overflow: hidden; }
+.theme-tile .prev-own { display: block; height: 96px; }
