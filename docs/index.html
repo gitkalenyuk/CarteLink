@@ -1,0 +1,740 @@
+<!doctype html>
+<html lang="uk" data-type="software" data-radius="soft" data-ground="sky" data-buttons="pill" data-motion>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CarteLink: локальний AI-шлюз для Claude Code, Codex і Cursor</title>
+<meta name="description" content="Безкоштовна програма для macOS, що збирає твої AI-акаунти й API-ключі за однією адресою 127.0.0.1:8317 і сама перемикає їх на ліміті.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="CarteLink: локальний AI-шлюз для Claude Code, Codex і Cursor">
+<meta property="og:description" content="Одна адреса й один ключ для всіх твоїх AI-акаунтів. Відкритий код, MIT.">
+<meta property="og:image" content="share.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" href="assets/brand/cartelink-128.webp" type="image/webp">
+<meta name="theme-color" content="#18191b">
+<!-- <link rel="canonical" href="https://gitkalenyuk.github.io/CarteLink/"> -->
+<meta name="site-kind" content="software">
+<meta name="page-type" content="software">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@400..500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/system.css">
+<link rel="stylesheet" href="assets/ui/cards.css">
+<link rel="stylesheet" href="assets/motion/motion.css">
+<link rel="stylesheet" href="assets/backgrounds/backgrounds.css">
+<link rel="stylesheet" href="assets/layout/layout.css">
+<link rel="stylesheet" href="assets/icons/icon.css">
+<style>
+:root {
+  --p-bg: #18191b; --p-surface: #222427; --p-ink: #eff0f1; --p-muted: #9c9ea3;
+  --p-accent: #ff4a1f; --p-accent-ink: #18191b; --p-action: #ff4a1f; --p-action-ink: #18191b;
+  --p-inv-bg: #eff0f1; --p-inv-surface: #dedfe0; --p-inv-ink: #18191b; --p-inv-muted: #5b5c5e;
+  --p-inv-accent: #18191b; --p-inv-accent-ink: #eff0f1; --p-inv-action: #18191b; --p-inv-action-ink: #eff0f1;
+  --font-display: "Geist", system-ui, sans-serif;
+  --font-text: "Geist", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --display-weight: 500;
+  --display-tracking: -0.035em;
+  --display-tracking-xl: -0.045em;
+}
+</style>
+<link rel="stylesheet" href="assets/ui/base.css">
+<link rel="stylesheet" href="assets/ui/window/fragment.css">
+<link rel="stylesheet" href="assets/ui/pipeline-board/fragment.css">
+<link rel="stylesheet" href="assets/ui/notify/fragment.css">
+<link rel="stylesheet" href="assets/ui/terminal-run/fragment.css">
+<link rel="stylesheet" href="assets/diagrams/diagram.css">
+<link rel="stylesheet" href="assets/layout/demo.css">
+<link rel="stylesheet" href="assets/moments/letters-assemble/moment.css">
+<link rel="stylesheet" href="assets/moments/line-carries-colour/moment.css">
+<script>document.documentElement.classList.add('m-enter');setTimeout(()=>document.documentElement.classList.add('m-enter-done'),700)</script>
+<script src="assets/backgrounds/backgrounds.js"></script>
+<script>document.documentElement.classList.add('mo-js');setTimeout(()=>document.documentElement.classList.add('mo-safe'),2500)</script>
+<link rel="modulepreload" href="assets/moments/moments.js">
+<link rel="modulepreload" href="assets/moments/lib.js">
+<link rel="modulepreload" href="assets/moments/letters-assemble/moment.js">
+<link rel="modulepreload" href="assets/moments/line-carries-colour/moment.js">
+<style>
+/* ---- the logo: the client's own mark (build/icon256.png as webp) ---- */
+.nav__logo img, .closing__links .nav__logo img { width: 24px; height: 24px; border-radius: 6px; flex: none; }
+
+/* ---- hero: the CarteLink Overview window in its Graphite look, on the fluted-glass ground ---- */
+.hero__art > .ly-piece--note { left: var(--s-6); bottom: var(--s-6); width: 300px; z-index: 2; }
+.cl-win { --g-bg: #16171a; --g-surface: #1c1d21; --g-line: #2c2e34; --g-text: #e6e7ea; --g-text2: #a4a7b0; --g-ok: #9ece6a; --g-warn: #e0af68; --g-bad: #f7768e; --g-acc: #7aa2f7; }
+.cl-win.d-win--dark { background: var(--g-bg); }
+.cl-win .d-side { font-size: 13px; }
+.cl-win .d-side img { width: 14px; height: 14px; border-radius: 4px; }
+.cl-now { display: grid; gap: 10px; padding-bottom: 14px; border-bottom: 1px solid var(--g-line); }
+.cl-now__label { font-size: 13px; color: var(--g-text2); }
+.cl-now__model { font: 500 26px/1.1 var(--font-mono); letter-spacing: -0.02em; color: var(--g-text); }
+.cl-now__lead { font-size: 13px; color: var(--g-text2); margin: 0; }
+.cl-now__acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.cl-btn { display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 7px; font-size: 13px; font-weight: 500; border: 1px solid var(--g-line); color: var(--g-text); background: var(--g-surface); }
+.cl-btn--primary { background: var(--g-acc); color: #0d1220; border-color: transparent; }
+.cl-cmd { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 8px; background: #121316; border: 1px solid var(--g-line); font: 400 13px/1 var(--font-mono); color: var(--g-text); white-space: nowrap; overflow: hidden; }
+.cl-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--g-ok); flex: none; }
+.cl-dot--warn { background: var(--g-warn); } .cl-dot--bad { background: var(--g-bad); }
+.cl-sub { font-size: 13px; color: var(--g-text2); }
+.cl-limits { display: grid; gap: 0; }
+.cl-limits__head { display: flex; justify-content: space-between; font-size: 13px; color: var(--g-text2); padding: 12px 0 6px; }
+.cl-limit { display: grid; grid-template-columns: 20px minmax(0, 1fr) 120px; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--g-line); font-size: 13px; color: var(--g-text); }
+.cl-limit img { width: 18px; height: 18px; }
+.cl-limit small { display: block; color: var(--g-text2); font-size: 13px; }
+.cl-bar { height: 6px; border-radius: 99px; background: #2a2c32; overflow: hidden; }
+.cl-bar > i { display: block; height: 100%; width: var(--v, 40%); border-radius: inherit; background: var(--g-ok); }
+.cl-bar--warn > i { background: var(--g-warn); }
+.cl-win .d-main { padding-right: var(--ly-cut-room, 48px); }
+.d-note__line { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 13px; color: #3d4247; border-top: 1px solid rgb(0 0 0 / .06); }
+.d-note__line:first-of-type { border-top: 0; }
+.d-note__line i { width: 18px; height: 18px; border-radius: 50%; flex: none; display: grid; place-items: center; background: #e7f4ec; color: #17673f; font-style: normal; font-size: 13px; font-weight: 700; }
+.d-note__line i.warn { background: #fdf0dc; color: #8a5300; }
+.d-note__line b { font-weight: 500; color: #16181a; }
+.hero__proof { font-size: var(--t-small); color: var(--muted); }
+@media (max-width: 1023px) { .hero__art > .ly-piece--note { left: var(--s-4); bottom: var(--s-4); width: 270px; } }
+@media (max-width: 639px) { .cl-limits, .cl-now__lead { display: none; } .cl-now__model { font-size: 20px; } }
+
+/* ---- app-frame (sections-library.md, app-frame: the whole recipe) ---- */
+.app.ui { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); margin-top: var(--s-7); background: var(--u-bg); border: 1px solid var(--u-border); border-radius: var(--u-r); box-shadow: var(--u-shadow); }
+.app > .app__pane { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.app > .app__pane + .app__pane { border-left: 1px solid var(--u-line); }
+.app > .app__pane > .ui-panel { width: 100%; border: 0; border-radius: 0; box-shadow: none; }
+.app > .app__pane::after { content: ""; position: absolute; inset: auto 0 0 0; height: 64px; background: linear-gradient(transparent, var(--u-bg)); pointer-events: none; }
+@media (min-width: 1024px) and (max-width: 1279px) { .app.ui { grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); } }
+@media (max-width: 1023px) {
+  .app.ui { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .app > .app__pane--list { max-height: 252px; }
+  .app > .app__pane--list::after { display: none; }
+  .app .ui-win__side { display: none; }
+  .app .ui-win__body { grid-template-columns: minmax(0, 1fr); }
+  .app > .app__pane + .app__pane { border-left: 0; border-top: 1px solid var(--u-line); }
+}
+@media (max-width: 639px) {
+  .app.ui { grid-template-rows: minmax(0, 1fr); }
+  .app > .app__pane--list { display: none; }
+  .app > .app__pane + .app__pane { border-top: 0; }
+}
+/* the request nodes are narrow: their names need the room of the tool mark (wide layout only) */
+@media (min-width: 1024px) { .app .ui-pipe__step .ui-pipe__tool { display: none; } }
+.ui-win__row .ui-avatar img, .ui-pipe__commit .ui-avatar img { width: 16px; height: 16px; object-fit: contain; }
+.ui-win__row .ui-avatar, .ui-pipe__commit .ui-avatar { background: #fff; }
+
+/* ---- feature cards: one --p-h for the group; the small UI pieces inside the panels ---- */
+#features .panel { --p-h: 300px; }
+@media (max-width: 639px) { #features .panel { --p-h: 176px; } }
+.cl-card { background: #fff; color: #16181a; border-radius: 12px; padding: 14px 16px; font: 400 13px/1.4 var(--font-text); box-shadow: 0 0 0 1px rgb(0 0 0 / .06), 0 14px 32px -18px rgb(0 0 0 / .35); }
+.cl-card h4 { margin: 0 0 8px; font: 500 14px/1.3 var(--font-text); display: flex; justify-content: space-between; gap: 8px; }
+.cl-map { display: grid; grid-template-columns: minmax(0, 1fr) 16px minmax(0, 1fr); gap: 6px 10px; align-items: center; }
+.cl-map > span { font: 400 13px/1.3 var(--font-mono); padding: 6px 0; border-top: 1px solid rgb(0 0 0 / .07); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cl-map > span.h { font: 500 13px/1.3 var(--font-text); color: #5d6268; border-top: 0; }
+.cl-map > .arr { color: #8a8f94; text-align: center; overflow: visible; }
+.cl-map > .on { color: #c2410c; }
+.cl-progs { display: grid; gap: 0; }
+.cl-prog { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid rgb(0 0 0 / .07); }
+.cl-prog:first-of-type { border-top: 0; }
+.cl-prog img { width: 22px; height: 22px; object-fit: contain; }
+.cl-prog small { display: block; color: #6b7076; font: 400 13px/1.3 var(--font-mono); }
+.cl-chip { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 99px; font-size: 13px; font-weight: 500; background: #e7f4ec; color: #17673f; white-space: nowrap; }
+.cl-chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.cl-chip--off { background: #eef0f2; color: #4d5257; }
+.cl-themes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.cl-theme { border-radius: 8px; overflow: hidden; box-shadow: 0 0 0 1px rgb(0 0 0 / .08); background: #fff; }
+.cl-theme > i { display: block; height: 54px; background: var(--sw); position: relative; }
+.cl-theme > i::after { content: ""; position: absolute; left: 8px; right: 30%; bottom: 10px; height: 6px; border-radius: 3px; background: var(--sw2); }
+.cl-theme > span { display: block; padding: 6px 8px; font-size: 13px; color: #16181a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cl-theme.is-on { box-shadow: 0 0 0 2px #c2410c; }
+
+/* ---- integrations: the real marks on tiles ---- */
+.cl-tools { display: block; margin-top: var(--s-7); }
+.cl-tools__group + .cl-tools__group { margin-top: var(--s-7); }
+.cl-tools__grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--s-6) var(--s-5); margin-top: var(--s-5); }
+.cl-tool { display: grid; justify-items: start; gap: var(--s-3); min-width: 0; }
+.cl-tool .t-label { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.cl-tools__more { margin-top: var(--s-7); }
+@media (max-width: 1023px) { .cl-tools__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 639px) { .cl-tools { margin-top: var(--s-6); } .cl-tools__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-5) var(--s-3); } .cl-tool { grid-template-columns: 72px minmax(0, 1fr); align-items: center; } .cl-tools .ic-tile--56 { --tile: 72px; } .cl-tools .ic-tile--wide { width: 72px; } }
+
+/* ---- routing: the diagram frame ---- */
+/* the lit frames hold white UI and white diagram nodes, as on a light ground */
+.frame--lit { --frag: #fff; }
+#routing .frame--lit { --ratio: 80%; }
+#code .frame--lit { --ratio: 106%; }
+@media (max-width: 639px) { #routing .frame--lit, #code .frame--lit { --ratio: 100%; } }
+
+.cl-status { --ratio: 52%; margin-top: var(--s-5); }
+.cl-status .cl-term { width: min(100%, 360px); }
+@media (max-width: 639px) { #code .frame--lit, .cl-status { margin-top: var(--s-7); } }
+/* ---- download rows ---- */
+.cl-dl { list-style: none; margin: 0; padding: 0; }
+.cl-dl li { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: var(--s-5); align-items: center; padding: 44px 0; border-bottom: 1px solid var(--line); }
+.cl-dl li:first-child { border-top: 1px solid var(--line); }
+.cl-dl__name { display: block; font: 500 var(--t-card)/1.3 var(--font-text); }
+.cl-dl__name a { color: inherit; }
+.cl-dl__meta { display: block; margin-top: 4px; color: var(--muted); font-size: var(--t-small); }
+.cl-dl__size { font-variant-numeric: tabular-nums; color: var(--ink); }
+.cl-dl code { font-family: var(--font-mono); font-size: 14px; white-space: nowrap; }
+@media (max-width: 639px) { .cl-dl li { grid-template-columns: 48px minmax(0, 1fr) auto; gap: var(--s-4); padding: var(--s-3) 0; } .cl-dl .ic-tile--48 { --tile: 44px; } }
+
+/* ---- install steps: one --p-h, small pieces inside the panels ---- */
+#install .panel { --p-h: 260px; }
+@media (max-width: 639px) { #install .panel { --p-h: 250px; } }
+.cl-term { background: #16171a; color: #e6e7ea; border-radius: 12px; padding: 14px 16px; font: 400 13px/1.55 var(--font-mono); box-shadow: 0 0 0 1px rgb(255 255 255 / .06), 0 14px 32px -18px rgb(0 0 0 / .5); }
+.cl-term b { color: #ff7a52; font-weight: 400; }
+.cl-term .c { color: #80838d; }
+.cl-term .k { color: #9ece6a; }
+.cl-finder { display: grid; grid-template-columns: 1fr 24px 1fr; align-items: center; gap: 8px; }
+.cl-finder__item { display: grid; justify-items: center; gap: 8px; padding: 14px 8px; border-radius: 10px; background: #f4f5f6; font-size: 13px; color: #16181a; text-align: center; }
+.cl-finder__item img { width: 48px; height: 48px; border-radius: 11px; }
+.cl-finder__folder { width: 52px; height: 42px; border-radius: 6px; background: linear-gradient(#78b8f5, #4a90e2); position: relative; }
+.cl-finder__folder::before { content: ""; position: absolute; left: 0; top: -6px; width: 22px; height: 10px; border-radius: 4px 4px 0 0; background: #78b8f5; }
+.cl-finder > .arr { text-align: center; color: #6b7076; font-size: 18px; }
+
+.cl-facts { list-style: none; padding: 0; margin-bottom: 0; } .cl-facts li { padding-top: var(--s-3); border-top: 1px solid var(--line); }
+/* ---- the close: one action, one look (the lit footer keeps the page's orange) ---- */
+.footer--statement { --action: var(--p-action); --action-ink: var(--p-action-ink); }
+.close__word { line-height: 1.04; }
+/* the hero frame's pause disc: a ring that reads on the pale glass */
+.hero__art .loop-pause:focus-visible { outline: 2px solid #18191b; outline-offset: 2px; }
+/* running text in the ink (7:1), the grey only for labels */
+.hero__proof, .mo-la__sub, .cl-dl__meta, .cl-tools__more { color: var(--ink); }
+</style>
+</head>
+<body>
+<!-- type: software (site-kind software; CarteLink, a desktop AI gateway)
+     deal: hero collage (layout/deal.mjs), nav nav-mega, close close-word, footer footer-statement, rhythm surface-pairs,
+     buttons pill, mark ring (replaced by the client's own logo), ground sky (data-ground), palette graphite-safety-orange
+     (the first two dealt, forest-lime and night-cornflower, clash with the client's orange arch logo; graphite and orange
+     are the logo's own colours and the app's own Graphite theme), type geist (Geist + Geist Mono: the first dealt
+     pairing, Gabarito/Figtree, has no Cyrillic for a Ukrainian page)
+     effect: fluted-glass in the hero frame; card grounds silk-folds (sky palette, still)
+     moments: letters-assemble in #start (the client's own line, "Запустив — і працює", set large);
+              line-carries-colour in #download (the page turns to the surface band where you take the file)
+     voice: technical and dry (copy-registers 2), in the app's own "ти" and its short plain sentences -->
+<header class="nav">
+  <div class="wrap nav__bar">
+    <a class="skip-link" href="#top">Перейти до змісту</a>
+    <a class="nav__logo" href="#top"><img src="assets/brand/cartelink-128.webp" alt="" width="24" height="24">CarteLink</a>
+    <nav class="nav__links" aria-label="Головне меню">
+      <div class="nav__item">
+        <a class="nav__link" href="#features">Можливості <svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+        <div class="nav__menu">
+          <div class="wrap grid">
+            <div class="menu-col span-3">
+              <p class="t-label">Шлюз</p>
+              <a href="#features">Підміна моделей<span>Просить одну, відповідає інша</span></a>
+              <a href="#features">Ротація акаунтів<span>Наступний акаунт на ліміті</span></a>
+              <a href="#flow">Потік запитів<span>Кожен запит по кроках</span></a>
+            </div>
+            <div class="menu-col span-3">
+              <p class="t-label">Програми</p>
+              <a href="#tools">Акаунти й API<span>Google, Claude, OpenRouter</span></a>
+              <a href="#routing">Як іде запит<span>Від програми до акаунта</span></a>
+              <a href="#install">Підключення<span>Claude Code за хвилину</span></a>
+            </div>
+            <a class="menu-card span-3 start-10" href="#download">
+              <div class="panel">
+                <div class="stage stage--fade-br"><div class="at-corner" style="--ax:24px;--ay:24px">
+                  <div class="cl-card" style="width:260px"><h4>CarteLink 3.0.0 <span class="cl-chip">Новий</span></h4><p style="margin:0;color:#5d6268">Переписаний на Rust, 14 дизайнів, запасні моделі.</p></div>
+                </div></div>
+              </div>
+              <span class="t-card">Версія 3.0.0</span>
+              <span class="t-small muted">Що нового в цьому релізі</span>
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="nav__item"><a class="nav__link" href="#tools">Акаунти</a></div>
+      <div class="nav__item"><a class="nav__link" href="#install">Встановлення</a></div>
+      <div class="nav__item"><a class="nav__link" href="#code">Код</a></div>
+      <div class="nav__item"><a class="nav__link" href="#faq">Питання</a></div>
+    </nav>
+    <div class="nav__actions">
+      <a class="btn btn--primary" href="#download">Завантажити для macOS</a>
+    </div>
+    <button class="nav__toggle" type="button" aria-expanded="false" aria-label="Меню">
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M2 5h14M2 13h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero hero--collage" data-enter aria-labelledby="hero-h">
+    <div class="wrap"><div class="hero-text grid hero__grid">
+      <div class="hero__text span-5">
+        <h1 id="hero-h">Локальний AI-шлюз для Claude Code і Codex</h1>
+        <p class="hero__lead">CarteLink збирає твої акаунти й API-ключі за адресою 127.0.0.1:8317. Коли акаунт упирається в ліміт, шлюз сам бере наступний.</p>
+        <div class="btn-row"><a class="btn btn--primary" href="#download">Завантажити для macOS<svg class="m-arrow" viewBox="0 0 12 12" aria-hidden="true"><path class="m-arrow__stem" d="M1 6h8"/><path class="m-arrow__head" d="M4.5 2.5 8 6l-3.5 3.5"/></svg></a><a class="btn btn--secondary" href="https://github.com/gitkalenyuk/CarteLink">Код на GitHub</a></div>
+        <p class="hero__proof">Безкоштовно, код відкритий під MIT. Версія 3.0.0 для macOS 13 і новіших.</p>
+      </div>
+      <div class="hero__art span-6 start-7" data-fx="fluted-glass" data-fx-seed="3170" data-fx-params='{"ribWidth":34,"angle":0,"distortion":0.45,"highlight":0.12,"blur":0.2}' role="img" aria-label="Екран «Огляд» у CarteLink: модель claude-sonnet-5-5 відповідає всім програмам, адреса шлюзу й ліміти акаунтів; поруч картка запасної моделі">
+        <div class="ly-piece ly-piece--main d-win d-win--dark cl-win" aria-hidden="true">
+          <div class="d-win__bar"><span class="d-win__dots"><i></i><i></i><i></i></span><span>CarteLink · Огляд</span></div>
+          <div class="d-win__body">
+            <div class="d-side">
+              <span class="is-on"><i></i>Огляд</span><span><i></i>Моделі</span><span><i></i>Акаунти</span><span><i></i>API-ключі</span><span><i></i>Статистика</span>
+              <span class="d-side__label">Керування</span><span><i></i>Підключити програму</span><span><i></i>Провайдери</span><span><i></i>Налаштування</span>
+            </div>
+            <div class="d-main">
+              <div class="cl-now">
+                <span class="cl-now__label">Зараз відповідає</span>
+                <span class="cl-now__model">claude-sonnet-5-5</span>
+                <p class="cl-now__lead">Відповідає на всі запити твоїх програм. За останню годину: 212 запитів.</p>
+                <div class="cl-now__acts"><span class="cl-btn cl-btn--primary">Застосувати до всього</span><span class="cl-btn">Перевірити</span></div>
+                <div class="cl-cmd"><span class="cl-dot"></span>http://127.0.0.1:8317/v1</div>
+              </div>
+              <div class="cl-limits">
+                <div class="cl-limits__head"><span>Ліміти акаунтів</span><span>Акаунти</span></div>
+                <div class="cl-limit"><img width="18" height="18" src="assets/icons/google-icon.svg" alt=""><span>Google Antigravity<small>3 акаунти</small></span><span class="cl-bar" style="--v:64%"><i></i></span></div>
+                <div class="cl-limit"><img width="18" height="18" src="assets/icons/claude.svg" alt=""><span>Claude<small>Ліміт до 18:40</small></span><span class="cl-bar cl-bar--warn" style="--v:92%"><i></i></span></div>
+                <div class="cl-limit"><img width="18" height="18" src="assets/icons/openai.svg" alt="" style="filter:invert(1)"><span>Codex<small>1 акаунт</small></span><span class="cl-bar" style="--v:31%"><i></i></span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="ly-piece ly-piece--note d-card" aria-hidden="true" data-ly-steps="700">
+          <div class="d-card__row"><h5>Запасна модель</h5><span class="d-chip" data-step data-step-at="4">Відповіла</span></div>
+          <div class="d-note__line" data-step><i>✓</i><span>Cursor просить <b>claude-opus-5-5</b></span></div>
+          <div class="d-note__line" data-step><i class="warn">!</i><span>Акаунт Claude на ліміті, <b>429</b></span></div>
+          <div class="d-note__line" data-step><i>✓</i><span>Відповіла <b>gemini-3-pro</b> (запасна)</span></div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <section class="section" id="flow" aria-labelledby="flow-h">
+    <div class="wrap">
+      <div class="grid">
+        <h2 id="flow-h" class="span-5">Потік запитів. <span class="muted">Кожен запит видно по кроках.</span></h2>
+        <div class="span-6 start-7 stack-4">
+          <p class="t-lead">Програма надсилає запит, CarteLink перевіряє ключ, застосовує правило й віддає запит моделі з твого акаунта. Усе це видно наживо.</p>
+          <a class="link" href="#routing">Як запит проходить через шлюз</a>
+        </div>
+      </div>
+      <div class="ui app fill" role="img" aria-label="Вікно CarteLink: список останніх запитів від Claude Code, Cursor, Codex та інших програм, а поруч один запит по кроках: програма, ключ, правило, модель, відповідь" data-ui-pause-host>
+        <div class="app__pane app__pane--list">
+          <div class="ui ui-panel ui-win" data-ui="window" data-open="Новий" data-work="Відповідає" data-done="Готово">
+            <div class="ui-win__bar">
+              <span class="ui-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="ui-win__crumb">CarteLink <i>/</i> <b>Статистика</b></span>
+              <span class="ui-spacer"></span>
+              <span class="ui-win__search" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><span class="ui-win__ph">Пошук</span><span class="ui-kbd">/</span></span>
+            </div>
+            <div class="ui-win__body">
+              <nav class="ui-win__side" aria-hidden="true">
+                <span class="ui-win__nav is-on"><svg class="ui-icon" viewBox="0 0 16 16"><path d="M2.5 9h3l1 1.5h3l1-1.5h3"/><path d="M2.5 9 4 3.5h8L13.5 9v3.5h-11z"/></svg>Усі<em>212</em></span>
+                <span class="ui-win__nav"><svg class="ui-icon" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg>Запасні<em>7</em></span>
+                <span class="ui-win__nav"><svg class="ui-icon" viewBox="0 0 16 16"><path d="m3.5 8.4 2.8 2.8 6.2-6.4"/></svg>Помилки<em>3</em></span>
+                <span class="ui-win__label">Програми</span>
+                <span class="ui-win__nav"><span class="ui-win__hash">#</span>Claude Code</span>
+                <span class="ui-win__nav"><span class="ui-win__hash">#</span>Cursor</span>
+              </nav>
+              <div class="ui-win__main">
+                <div class="ui-win__cols" aria-hidden="true"><span>Програма</span><span>Модель</span><span>Стан</span><span>Час</span></div>
+                <ul class="ui-win__rows">
+                  <li class="ui-win__row" data-row><span class="ui-avatar"><img width="16" height="16" loading="lazy" src="assets/icons/claude-code.svg" alt=""></span><span class="ui-win__who">Claude Code</span><span class="ui-win__sub">claude-opus-5-5 → gemini-3-pro</span><span class="ui-win__st" data-st>Новий</span><span class="ui-win__age">2с</span></li>
+                  <li class="ui-win__row" data-row><span class="ui-avatar"><img width="16" height="16" loading="lazy" src="assets/icons/cursor.svg" alt=""></span><span class="ui-win__who">Cursor</span><span class="ui-win__sub">claude-sonnet-5-5</span><span class="ui-win__st" data-st>Новий</span><span class="ui-win__age">5с</span></li>
+                  <li class="ui-win__row" data-row><span class="ui-avatar"><img width="16" height="16" loading="lazy" src="assets/icons/openai.svg" alt=""></span><span class="ui-win__who">Codex</span><span class="ui-win__sub">gpt-5.5-codex</span><span class="ui-win__st" data-st>Новий</span><span class="ui-win__age">9с</span></li>
+                  <li class="ui-win__row" data-row><span class="ui-avatar"><img width="16" height="16" loading="lazy" src="assets/icons/cline.svg" alt=""></span><span class="ui-win__who">Cline</span><span class="ui-win__sub">claude-sonnet-5-5</span><span class="ui-win__st is-done" data-st>Готово</span><span class="ui-win__age">14с</span></li>
+                  <li class="ui-win__row" data-row><span class="ui-avatar"><img width="16" height="16" loading="lazy" src="assets/icons/qwen-icon.svg" alt=""></span><span class="ui-win__who">Qwen Code</span><span class="ui-win__sub">qwen3-coder → kimi-k2</span><span class="ui-win__st is-done" data-st>Готово</span><span class="ui-win__age">21с</span></li>
+                  <li class="ui-win__row" data-row><span class="ui-avatar"><img width="16" height="16" loading="lazy" src="assets/icons/gemini.svg" alt=""></span><span class="ui-win__who">Gemini CLI</span><span class="ui-win__sub">gemini-3-pro</span><span class="ui-win__st is-done" data-st>Готово</span><span class="ui-win__age">32с</span></li>
+                  <li class="ui-win__row" data-row><span class="ui-avatar"><img width="16" height="16" loading="lazy" src="assets/icons/opencode-icon.svg" alt=""></span><span class="ui-win__who">OpenCode</span><span class="ui-win__sub">deepseek-chat</span><span class="ui-win__st is-done" data-st>Готово</span><span class="ui-win__age">40с</span></li>
+                  <li class="ui-win__row" data-row><span class="ui-avatar"><img width="16" height="16" loading="lazy" src="assets/icons/claude-code.svg" alt=""></span><span class="ui-win__who">Claude Code</span><span class="ui-win__sub">claude-haiku-5-5</span><span class="ui-win__st is-done" data-st>Готово</span><span class="ui-win__age">47с</span></li>
+                  <li class="ui-win__row" data-row><span class="ui-avatar"><img width="16" height="16" loading="lazy" src="assets/icons/cursor.svg" alt=""></span><span class="ui-win__who">Cursor</span><span class="ui-win__sub">claude-sonnet-5-5</span><span class="ui-win__st is-done" data-st>Готово</span><span class="ui-win__age">58с</span></li>
+                  <li class="ui-win__row" data-row><span class="ui-avatar"><img width="16" height="16" loading="lazy" src="assets/icons/openai.svg" alt=""></span><span class="ui-win__who">Codex</span><span class="ui-win__sub">gpt-5.5-codex</span><span class="ui-win__st is-done" data-st>Готово</span><span class="ui-win__age">1хв</span></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="app__pane app__pane--open" data-ui-loop>
+          <div class="ui ui-panel ui-pipe" data-ui="pipeline-board">
+            <div class="ui-pipe__head">
+              <span class="ui-pipe__repo">Claude Code</span><i class="ui-pipe__slash">/</i><code class="ui-pipe__ref">POST /v1/messages</code>
+              <span class="ui-pipe__run">#4127</span>
+              <span class="ui-spacer"></span>
+              <span class="ui-pipe__total"><svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8.5" r="5.5"/><path d="M8 5.5v3l2 1.25M6.5 1.75h3"/></svg><span data-pipe-total>0,6 с</span></span>
+              <span class="ui-chip ui-chip--ink ui-chip--live ui-pipe__chip" data-pipe-chip data-done="Готово">Відповідає</span>
+            </div>
+            <div class="ui-pipe__commit">
+              <span class="ui-avatar"><img width="16" height="16" loading="lazy" src="assets/icons/claude-code.svg" alt=""></span>
+              <span class="ui-pipe__msg">claude-opus-5-5 (high)</span>
+              <code class="ui-pipe__sha">cl-api-claude</code>
+              <button class="ui-btn ui-btn--ghost ui-btn--sm ui-pipe__btn" type="button" tabindex="-1" data-pipe-btn data-done="Повторити">Скасувати</button>
+            </div>
+            <ol class="ui-pipe__steps">
+              <li class="ui-pipe__step is-done" data-step="app"><span class="ui-pipe__ico"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 8.2 2.3 2.3 4.7-5"/></svg></span><span class="ui-pipe__name"><span class="ui-pipe__tool" aria-hidden="true"><img width="20" height="20" loading="lazy" src="assets/icons/claude-code.svg" alt=""></span><span class="ui-pipe__nm">Програма</span></span><code class="ui-pipe__cmd">Claude Code</code><span class="ui-pipe__time" data-time>2 мс</span><span class="ui-pipe__bar"><i></i></span></li>
+              <li class="ui-pipe__step is-done" data-step="key"><span class="ui-pipe__ico"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 8.2 2.3 2.3 4.7-5"/></svg></span><span class="ui-pipe__name"><span class="ui-pipe__tool" aria-hidden="true"><img width="20" height="20" loading="lazy" src="assets/brand/cartelink-128.webp" alt=""></span><span class="ui-pipe__nm">Ключ</span></span><code class="ui-pipe__cmd">cl-api-claude</code><span class="ui-pipe__time" data-time>1 мс</span><span class="ui-pipe__bar"><i></i></span></li>
+              <li class="ui-pipe__step is-run" data-step="rule" style="--k:0.6"><span class="ui-pipe__ico"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 8.2 2.3 2.3 4.7-5"/></svg></span><span class="ui-pipe__name"><span class="ui-pipe__tool" aria-hidden="true"><img width="20" height="20" loading="lazy" src="assets/brand/cartelink-128.webp" alt=""></span><span class="ui-pipe__nm">Правило</span></span><code class="ui-pipe__cmd">opus → gemini-3-pro</code><span class="ui-pipe__time" data-time="1 мс">1 мс</span><span class="ui-pipe__bar"><i></i></span></li>
+              <li class="ui-pipe__step" data-step="model"><span class="ui-pipe__ico"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 8.2 2.3 2.3 4.7-5"/></svg></span><span class="ui-pipe__name"><span class="ui-pipe__tool" aria-hidden="true"><img width="20" height="20" loading="lazy" src="assets/icons/gemini.svg" alt=""></span><span class="ui-pipe__nm">Модель</span></span><code class="ui-pipe__cmd">Antigravity, акаунт 2</code><span class="ui-pipe__time" data-time="0,6 с">У черзі</span><span class="ui-pipe__bar"><i></i></span></li>
+              <li class="ui-pipe__step" data-step="answer"><span class="ui-pipe__ico"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 8.2 2.3 2.3 4.7-5"/></svg></span><span class="ui-pipe__name"><span class="ui-pipe__tool" aria-hidden="true"><img width="20" height="20" loading="lazy" src="assets/brand/cartelink-128.webp" alt=""></span><span class="ui-pipe__nm">Відповідь</span></span><code class="ui-pipe__cmd">стрім, 1 842 токени</code><span class="ui-pipe__time" data-time="4,1 с">У черзі</span><span class="ui-pipe__bar"><i></i></span></li>
+            </ol>
+            <div class="ui-pipe__log" aria-hidden="true">
+              <span class="ui-pipe__line" data-step="app"><b>→</b>POST /v1/messages від claude-cli</span>
+              <span class="ui-pipe__line" data-step="app">model: claude-opus-5-5, thinking: high</span>
+              <span class="ui-pipe__line" data-step="app">stream: true, 14 повідомлень</span>
+              <span class="ui-pipe__line" data-step="app">User-Agent: claude-cli</span>
+              <span class="ui-pipe__line" data-step="app">tools: 23, system: 1</span>
+              <span class="ui-pipe__line" data-step="app">адреса: 127.0.0.1, з цього комп'ютера</span>
+              <span class="ui-pipe__line" data-step="key"><b>→</b>ключ cl-api-claude: свій набір моделей</span>
+              <span class="ui-pipe__line" data-step="key">ключ прибрано, поставлено внутрішній</span>
+              <span class="ui-pipe__line" data-step="key">ліміт ключа: 41 з 600 за хвилину</span>
+              <span class="ui-pipe__line" data-step="key">дозволені моделі: claude-*, gemini-*</span>
+              <span class="ui-pipe__line" data-step="key">системний промпт: AGENT.md додано</span>
+              <span class="ui-pipe__line" data-step="key">думання: high, модель підтримує</span>
+              <span class="ui-pipe__line is-on" data-step="rule"><b>→</b>таблиця моделей: claude-opus-5-5</span>
+              <span class="ui-pipe__line is-on" data-step="rule">точний збіг → gemini-3-pro (high)</span>
+              <span class="ui-pipe__line is-on" data-step="rule">чорний список: без збігів</span>
+              <span class="ui-pipe__line is-on" data-step="rule">модель для програми: не задано</span>
+              <span class="ui-pipe__line is-on" data-step="rule">запасні: gemini-3-pro → deepseek-chat</span>
+              <span class="ui-pipe__line is-on" data-step="rule">контекст: 1M токенів</span>
+              <span class="ui-pipe__line is-on" data-step="rule">тіло запиту переписано, model замінено</span>
+              <span class="ui-pipe__line" data-step="model"><b>→</b>рушій: Antigravity, акаунт 2 з 3</span>
+              <span class="ui-pipe__line" data-step="model">акаунт 1 на ліміті до 18:40, пропущено</span>
+              <span class="ui-pipe__line" data-step="model">стратегія: по черзі, повторів 2</span>
+              <span class="ui-pipe__line" data-step="model">переклад формату: Anthropic → Gemini</span>
+              <span class="ui-pipe__line" data-step="model">перший токен за 0,6 с</span>
+              <span class="ui-pipe__line" data-step="model">статус 200</span>
+              <span class="ui-pipe__line" data-step="answer"><b>→</b>стрім без буферизації</span>
+              <span class="ui-pipe__line" data-step="answer">1 842 токени, перший за 0,6 с</span>
+              <span class="ui-pipe__line" data-step="answer">формат назад: Gemini → Anthropic</span>
+              <span class="ui-pipe__line" data-step="answer">у статистику: Claude Code, +1 запит</span>
+              <span class="ui-pipe__line" data-step="answer">у потоці: opus → gemini-3-pro</span>
+              <span class="ui-pipe__line" data-step="answer">з'єднання закрито</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section g2" id="features" aria-labelledby="features-h">
+    <div class="wrap">
+      <div class="group">
+        <div class="section-head">
+          <h2 id="features-h">Шлюз для акаунтів, які в тебе вже є. <span class="muted">Налаштовуєш раз, далі він працює сам.</span></h2>
+        </div>
+        <div class="grid">
+          <article class="card card--row card--open m-nolift span-6">
+            <h3>Підміняє моделі</h3>
+            <p>Програма просить claude-opus-5-5, а відповідає модель, яку ти вибрав. Спрацьовують лише точні назви.</p>
+            <div class="panel" data-fx="silk-folds" data-fx-seed="41" data-fx-palette='{"bg":"#c6d3df","surface":"#d6e0e9","ink":"#25303a","accent":"#7f9fbd"}' data-fx-params='{"tone":1,"speed":0}'>
+              <div class="stage stage--fade-b"><div class="at-rise fit" style="--fit-max:400px;--ax:max(24px, 50% - 200px);--ay:40px;--ay-sm:16px">
+                <div class="cl-card" role="img" aria-label="Таблиця моделей: claude-opus-5-5 замінено на gemini-3-pro, claude-haiku-5-5 на deepseek-chat">
+                  <h4>Моделі <span class="cl-chip">Таблиця</span></h4>
+                  <div class="cl-map" aria-hidden="true">
+                    <span class="h">Програма просить</span><span class="arr"></span><span class="h">Відповідає</span>
+                    <span>claude-opus-5-5</span><span class="arr">→</span><span class="on">gemini-3-pro</span>
+                    <span>claude-haiku-5-5</span><span class="arr">→</span><span>deepseek-chat</span>
+                    <span>gpt-5.5-codex</span><span class="arr">→</span><span>як є</span>
+                    <span>qwen3-coder</span><span class="arr">→</span><span>kimi-k2</span>
+                    <span>grok-4</span><span class="arr">→</span><span>як є</span>
+                  </div>
+                </div>
+              </div></div>
+            </div>
+          </article>
+          <article class="card card--row card--open m-nolift span-6">
+            <h3>Попереджає про збої</h3>
+            <p>Акаунт на ліміті чи відповіла запасна модель: CarteLink пише про це одразу.</p>
+            <div class="panel" data-fx="silk-folds" data-fx-seed="57" data-fx-palette='{"bg":"#c6d3df","surface":"#d6e0e9","ink":"#25303a","accent":"#7f9fbd"}' data-fx-params='{"tone":1,"speed":0}'>
+              <div class="stage"><div class="at-rise fit" style="--fit-max:380px;--ax:max(24px, 50% - 190px);--ay:calc(100% - 180px);--ay-sm:calc(100% - 180px)" data-ui-loop>
+                <div class="ui ui-notify" data-ui="notify" role="img" aria-label="Три сповіщення: акаунт Claude на ліміті, відповіла запасна модель, рушій перезапущено">
+                  <ul class="ui-notify__list" data-notify-list>
+                    <li class="ui-note"><span class="ui-avatar ui-note__av"><img width="16" height="16" loading="lazy" src="assets/icons/claude.svg" alt="" style="width:16px;height:16px"></span><span class="ui-note__text"><span class="ui-note__title">Акаунт Claude на ліміті<time>зараз</time></span><span class="ui-note__body">Запити йдуть на наступний акаунт</span></span><span class="ui-btn ui-btn--sm ui-note__btn">Акаунти</span></li>
+                    <li class="ui-note"><span class="ui-avatar ui-note__av"><img width="16" height="16" loading="lazy" src="assets/icons/gemini.svg" alt="" style="width:16px;height:16px"></span><span class="ui-note__text"><span class="ui-note__title">Відповіла запасна модель<time>4хв</time></span><span class="ui-note__body">claude-opus-5-5 → gemini-3-pro</span></span></li>
+                    <li class="ui-note"><span class="ui-note__ico"><svg class="ui-icon" viewBox="0 0 16 16"><path d="m3.5 8.4 2.8 2.8 6.2-6.4"/></svg></span><span class="ui-note__text"><span class="ui-note__title">Рушій перезапущено<time>12хв</time></span><span class="ui-note__body">Запит у журналі помилок</span></span></li>
+                  </ul>
+                </div>
+              </div></div>
+            </div>
+          </article>
+        </div>
+      </div>
+      <div class="grid">
+        <article class="card card--row card--open m-nolift span-6">
+          <h3>Підключає програми одним кліком</h3>
+          <p>Для п'яти програм шлюз сам вписує адресу й ключ, а потім уміє повернути файл як був.</p>
+          <div class="panel" data-fx="silk-folds" data-fx-seed="63" data-fx-palette='{"bg":"#c6d3df","surface":"#d6e0e9","ink":"#25303a","accent":"#7f9fbd"}' data-fx-params='{"tone":1,"speed":0}'>
+            <div class="stage stage--fade-b"><div class="at-rise fit" style="--fit-max:400px;--ax:max(24px, 50% - 200px);--ay:40px;--ay-sm:16px">
+              <div class="cl-card" role="img" aria-label="Підключені програми: Claude Code, Codex, OpenCode і Qwen Code підключено; Gemini CLI можна підключити; для Cursor і Cline є інструкція">
+                <h4>Підключити програму</h4>
+                <div class="cl-progs" aria-hidden="true">
+                  <div class="cl-prog"><img width="22" height="22" loading="lazy" src="assets/icons/claude-code.svg" alt=""><span>Claude Code<small>~/.claude/settings.json</small></span><span class="cl-chip">Підключено</span></div>
+                  <div class="cl-prog"><img width="22" height="22" loading="lazy" src="assets/icons/openai.svg" alt=""><span>Codex CLI<small>~/.codex/config.toml</small></span><span class="cl-chip">Підключено</span></div>
+                  <div class="cl-prog"><img width="22" height="22" loading="lazy" src="assets/icons/opencode-icon.svg" alt=""><span>OpenCode<small>opencode.json</small></span><span class="cl-chip">Підключено</span></div>
+                  <div class="cl-prog"><img width="22" height="22" loading="lazy" src="assets/icons/qwen-icon.svg" alt=""><span>Qwen Code<small>~/.qwen/settings.json</small></span><span class="cl-chip">Підключено</span></div>
+                  <div class="cl-prog"><img width="22" height="22" loading="lazy" src="assets/icons/gemini.svg" alt=""><span>Gemini CLI<small>~/.gemini/.env</small></span><span class="cl-chip cl-chip--off">Підключити</span></div>
+                  <div class="cl-prog"><img width="22" height="22" loading="lazy" src="assets/icons/cursor.svg" alt=""><span>Cursor<small>адреса й ключ вручну</small></span><span class="cl-chip cl-chip--off">Інструкція</span></div>
+                  <div class="cl-prog"><img width="22" height="22" loading="lazy" src="assets/icons/cline.svg" alt=""><span>Cline<small>адреса й ключ вручну</small></span><span class="cl-chip cl-chip--off">Інструкція</span></div>
+                </div>
+              </div>
+            </div></div>
+          </div>
+        </article>
+        <article class="card card--row card--open m-nolift span-6">
+          <h3>Виглядає так, як тобі зручно</h3>
+          <p>14 дизайнів, редактор власної теми й 17 мов інтерфейсу. Блоки на кожній сторінці можна переставити або сховати.</p>
+          <div class="panel" data-fx="silk-folds" data-fx-seed="78" data-fx-palette='{"bg":"#c6d3df","surface":"#d6e0e9","ink":"#25303a","accent":"#7f9fbd"}' data-fx-params='{"tone":1,"speed":0}'>
+            <div class="stage stage--fade-b"><div class="at-rise fit" style="--fit-max:420px;--ax:max(24px, 50% - 210px);--ay:40px;--ay-sm:16px">
+              <div class="cl-card" role="img" aria-label="Вибір дизайну: Графіт, Datamatics, Табло вокзалу, Касета, Пульсар, Теплий застосунок, Зоряний атлас, Жовта навігація, Нічна схема метро">
+                <h4>Дизайн <span class="cl-chip cl-chip--off">14</span></h4>
+                <div class="cl-themes" aria-hidden="true">
+                  <div class="cl-theme is-on"><i style="--sw:#16171a;--sw2:#7aa2f7"></i><span>Графіт</span></div>
+                  <div class="cl-theme"><i style="--sw:#000;--sw2:#fff"></i><span>Datamatics</span></div>
+                  <div class="cl-theme"><i style="--sw:#1b1b1b;--sw2:#f5c518"></i><span>Табло</span></div>
+                  <div class="cl-theme"><i style="--sw:#2b2622;--sw2:#e0a85c"></i><span>Касета</span></div>
+                  <div class="cl-theme"><i style="--sw:#0d1b2a;--sw2:#7dcfff"></i><span>Пульсар</span></div>
+                  <div class="cl-theme"><i style="--sw:#f3ede4;--sw2:#c2410c"></i><span>Теплий</span></div>
+                  <div class="cl-theme"><i style="--sw:#0e1420;--sw2:#e9c46a"></i><span>Зоряний атлас</span></div>
+                  <div class="cl-theme"><i style="--sw:#ffd400;--sw2:#111"></i><span>Навігація</span></div>
+                  <div class="cl-theme"><i style="--sw:#101418;--sw2:#3ddc97"></i><span>Метро</span></div>
+                </div>
+              </div>
+            </div></div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section statement" id="start" data-moment="letters-assemble" aria-labelledby="start-h">
+    <div class="wrap">
+      <h2 id="start-h" class="mo-la__type">Запустив — і працює</h2>
+      <p class="mo-la__sub">Без реєстрації й входу. Один порт, один ключ, і кожна програма підключається за готовою інструкцією.</p>
+    </div>
+  </section>
+
+  <section class="section" id="tools" style="--hm: 2" aria-labelledby="tools-h">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="tools-h">Акаунти, API й програми. <span class="muted">Підключаєш те, що вже маєш.</span></h2>
+      </div>
+      <div class="cl-tools" role="img" aria-label="Акаунти й API: Google Antigravity, Codex, Claude, Kimi, xAI, Meta, Kiro, GitHub Copilot, OpenRouter, Groq, DeepSeek, Ollama, Gemini, Qwen. Програми: Claude Code, Codex CLI, Cursor, Cline, OpenCode, Qwen Code, Gemini CLI">
+        <div class="cl-tools__group">
+          <p class="t-label muted">Акаунти й API</p>
+          <div class="cl-tools__grid">
+            <div class="cl-tool"><span class="ic-tile ic-tile--56"><img loading="lazy" class="ic ic-40" src="assets/icons/google-icon.svg" alt="Google Antigravity" data-icon="google-icon" width="39" height="40"></span><span class="t-label">Antigravity</span></div>
+            <div class="cl-tool"><span class="ic-tile ic-tile--56"><img loading="lazy" class="ic ic-40 ic-ink" src="assets/icons/openai.svg" alt="OpenAI" data-icon="openai" width="39" height="40"></span><span class="t-label">Codex</span></div>
+            <div class="cl-tool"><span class="ic-tile ic-tile--56"><img loading="lazy" class="ic ic-40" src="assets/icons/claude.svg" alt="Claude" data-icon="claude" width="40" height="40"></span><span class="t-label">Claude</span></div>
+            <div class="cl-tool"><span class="ic-tile ic-tile--56"><img loading="lazy" class="ic ic-40 ic-ink" src="assets/icons/moonshot-ai-icon.svg" alt="Kimi" data-icon="moonshot-ai-icon" width="40" height="40"></span><span class="t-label">Kimi</span></div>
+            <div class="cl-tool"><span class="ic-tile ic-tile--56 ic-tile--wide"><img loading="lazy" class="ic ic-40 ic-wide ic-ink" src="assets/icons/x-ai.svg" alt="xAI" data-icon="x-ai" width="40" height="15"></span><span class="t-label">xAI</span></div>
+            <div class="cl-tool"><span class="ic-tile ic-tile--56"><img loading="lazy" class="ic ic-40 ic-land" src="assets/icons/meta.svg" alt="Meta" data-icon="meta" width="40" height="27"></span><span class="t-label">Meta</span></div>
+            <div class="cl-tool"><span class="ic-tile ic-tile--56"><img loading="lazy" class="ic ic-40" src="assets/icons/kiro.svg" alt="Kiro" data-icon="kiro" width="33" height="40"></span><span class="t-label">Kiro</span></div>
+            <div class="cl-tool"><span class="ic-tile ic-tile--56"><img loading="lazy" class="ic ic-40 ic-ink" src="assets/icons/github-copilot.svg" alt="GitHub Copilot" data-icon="github-copilot" width="40" height="33"></span><span class="t-label">Copilot</span></div>
+            <div class="cl-tool"><span class="ic-tile ic-tile--56"><img loading="lazy" class="ic ic-40 ic-land" src="assets/icons/openrouter.svg" alt="OpenRouter" data-icon="openrouter" width="40" height="28"></span><span class="t-label">OpenRouter</span></div>
+            <div class="cl-tool"><span class="ic-tile ic-tile--56 ic-tile--wide"><img loading="lazy" class="ic ic-40 ic-wide" src="assets/icons/groq.svg" alt="Groq" data-icon="groq" width="40" height="11"></span><span class="t-label">Groq</span></div>
+            <div class="cl-tool"><span class="ic-tile ic-tile--56"><img loading="lazy" class="ic ic-40 ic-land" src="assets/icons/deepseek.svg" alt="DeepSeek" data-icon="deepseek" width="40" height="30"></span><span class="t-label">DeepSeek</span></div>
+            <div class="cl-tool"><span class="ic-tile ic-tile--56"><img loading="lazy" class="ic ic-40 ic-tall ic-ink" src="assets/icons/ollama.svg" alt="Ollama" data-icon="ollama" width="30" height="40"></span><span class="t-label">Ollama</span></div>
+            <div class="cl-tool"><span class="ic-tile ic-tile--56"><img loading="lazy" class="ic ic-40" src="assets/icons/gemini.svg" alt="Gemini" data-icon="gemini" width="40" height="40"></span><span class="t-label">Gemini</span></div>
+            <div class="cl-tool"><span class="ic-tile ic-tile--56"><img loading="lazy" class="ic ic-40" src="assets/icons/qwen-icon.svg" alt="Qwen" data-icon="qwen-icon" width="40" height="40"></span><span class="t-label">Qwen</span></div>
+          </div>
+        </div>
+        <div class="cl-tools__group">
+          <p class="t-label muted">Програми</p>
+          <div class="cl-tools__grid">
+            <div class="cl-tool"><span class="ic-tile ic-tile--56"><img loading="lazy" class="ic ic-40 ic-land" src="assets/icons/claude-code.svg" alt="Claude Code" data-icon="claude-code" width="40" height="25"></span><span class="t-label">Claude Code</span></div>
+            <div class="cl-tool"><span class="ic-tile ic-tile--56"><img loading="lazy" class="ic ic-40 ic-ink" src="assets/icons/openai.svg" alt="OpenAI" data-icon="openai" width="39" height="40"></span><span class="t-label">Codex CLI</span></div>
+            <div class="cl-tool"><span class="ic-tile ic-tile--56"><img loading="lazy" class="ic ic-40 ic-ink" src="assets/icons/cursor.svg" alt="Cursor" data-icon="cursor" width="35" height="40"></span><span class="t-label">Cursor</span></div>
+            <div class="cl-tool"><span class="ic-tile ic-tile--56"><img loading="lazy" class="ic ic-40 ic-ink" src="assets/icons/cline.svg" alt="Cline" data-icon="cline" width="38" height="40"></span><span class="t-label">Cline</span></div>
+            <div class="cl-tool"><span class="ic-tile ic-tile--56"><img loading="lazy" class="ic ic-40 ic-tall" src="assets/icons/opencode-icon.svg" alt="OpenCode" data-icon="opencode-icon" width="32" height="40"></span><span class="t-label">OpenCode</span></div>
+            <div class="cl-tool"><span class="ic-tile ic-tile--56"><img loading="lazy" class="ic ic-40" src="assets/icons/qwen-icon.svg" alt="Qwen" data-icon="qwen-icon" width="40" height="40"></span><span class="t-label">Qwen Code</span></div>
+            <div class="cl-tool"><span class="ic-tile ic-tile--56"><img loading="lazy" class="ic ic-40" src="assets/icons/gemini.svg" alt="Gemini" data-icon="gemini" width="40" height="40"></span><span class="t-label">Gemini CLI</span></div>
+          </div>
+        </div>
+        <p class="cl-tools__more muted">Плюс понад 70 OpenAI-сумісних провайдерів із готовими пресетами й інструкції ще для двох десятків програм, серед них Aider.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="routing" aria-labelledby="routing-h">
+    <div class="wrap">
+      <div class="grid">
+        <div class="span-5 stack-5">
+          <h2 id="routing-h">Як запит проходить через шлюз</h2>
+          <p class="t-lead">Програма шле запит на 127.0.0.1:8317 зі своїм ключем. CarteLink перевіряє ключ і таблицю моделей, а рушій CLIProxyAPI вибирає акаунт.</p>
+          <ul class="stack-3 cl-facts">
+            <li>Панель і керування працюють лише з цього комп'ютера.</li>
+            <li>Запасні моделі ловлять запит, якщо основна не відповіла.</li>
+            <li>Чорний список ховає моделі, які не треба віддавати.</li>
+          </ul>
+          <a class="link" href="#code">Подивитися код рушія</a>
+        </div>
+        <div class="frame frame--split frame--lit span-6 start-7">
+          <div class="dg" data-diagram><script type="application/json">{"layout":"bowtie","alt":"Claude Code, Cursor і Codex надсилають запити в CarteLink, а він віддає їх акаунтам Google Antigravity, Claude та OpenRouter.","sources":[{"label":"Claude Code","icon":"claude-code","sub":"Anthropic API"},{"label":"Cursor","icon":"cursor","sub":"OpenAI API"},{"label":"Codex","icon":"openai","sub":"Responses API"}],"core":{"label":"CarteLink"},"targets":[{"label":"Antigravity","icon":"logos:google-icon","sub":"3 акаунти"},{"label":"Claude","icon":"claude","sub":"1 акаунт"},{"label":"OpenRouter","icon":"openrouter","sub":"API-ключ"}]}</script></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section ground-surface" id="download" data-moment="line-carries-colour" data-moment-opts='{"from": "base"}' aria-labelledby="download-h">
+    <div class="wrap">
+      <div class="grid">
+        <div class="span-5 stack-5">
+          <h2 id="download-h">Завантажити CarteLink 3.0.0</h2>
+          <p class="t-lead">Для macOS 13 Ventura і новіших. Тип чипа видно в «Про цей Mac».</p>
+          <a class="link" href="https://github.com/gitkalenyuk/CarteLink/releases/latest">Усі релізи на GitHub</a>
+        </div>
+        <ul class="cl-dl span-6 start-7">
+          <li><span class="ic-tile ic-tile--48"><img loading="lazy" class="ic ic-40 ic-ink" src="assets/icons/apple.svg" alt="" width="33" height="40"></span><span><span class="cl-dl__name"><a class="link" href="https://github.com/gitkalenyuk/CarteLink/releases/download/v3.0.0-mac/CarteLink-3.0.0-apple-silicon.dmg">Apple Silicon</a></span><span class="cl-dl__meta">Чипи M1–M5</span></span><span class="cl-dl__size">18 МБ</span></li>
+          <li><span class="ic-tile ic-tile--48"><img loading="lazy" class="ic ic-40 ic-ink" src="assets/icons/apple.svg" alt="" width="33" height="40"></span><span><span class="cl-dl__name"><a class="link" href="https://github.com/gitkalenyuk/CarteLink/releases/download/v3.0.0-mac/CarteLink-3.0.0-intel.dmg">Intel</a></span><span class="cl-dl__meta">Intel Core i5, i7, i9</span></span><span class="cl-dl__size">19,8 МБ</span></li>
+          <li><span class="ic-tile ic-tile--48"><img loading="lazy" class="ic ic-40 ic-ink" src="assets/icons/apple.svg" alt="" width="33" height="40"></span><span><span class="cl-dl__name"><a class="link" href="https://github.com/gitkalenyuk/CarteLink/releases/download/v3.0.0-mac/CarteLink-3.0.0.dmg">Universal</a></span><span class="cl-dl__meta">Обидва типи Mac</span></span><span class="cl-dl__size">38,4 МБ</span></li>
+          <li><span class="ic-tile ic-tile--48"><img loading="lazy" class="ic ic-40 ic-ink" src="assets/icons/rust.svg" alt="" width="40" height="40"></span><span><span class="cl-dl__name"><a class="link" href="#code">Windows</a></span><span class="cl-dl__meta">Збірка з коду: <code>cargo build --release</code></span></span><span class="cl-dl__size">з коду</span></li>
+          <li><span class="ic-tile ic-tile--48"><img loading="lazy" class="ic ic-40 ic-land" src="assets/icons/claude-code.svg" alt="" width="40" height="25"></span><span><span class="cl-dl__name"><a class="link" href="https://github.com/gitkalenyuk/CarteLink/blob/main/INSTALL-MACOS-AI.md">INSTALL-MACOS-AI.md</a></span><span class="cl-dl__meta">Інструкція для ШІ-агента</span></span><span class="cl-dl__size">7 КБ</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="section ground-surface" id="install" style="--hm: 2" aria-labelledby="install-h">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="install-h">Встановлення за 3 кроки</h2>
+      </div>
+      <div class="grid">
+        <article class="card card--row m-nolift span-4">
+          <span class="step-num">1</span>
+          <h3>Перетягни в Програми</h3>
+          <p>Відкрий .dmg і перетягни CarteLink у Applications. Запускай звідти, а не з диска.</p>
+          <div class="panel panel--inset">
+            <div class="stage"><div class="at-rise fit" style="--fit-max:300px;--ax:max(20px, 50% - 150px);--ay:32px;--ay-sm:20px">
+              <div class="cl-card" role="img" aria-label="Значок CarteLink і стрілка до папки Applications">
+                <div class="cl-finder" aria-hidden="true">
+                  <span class="cl-finder__item"><img width="48" height="48" loading="lazy" src="assets/brand/cartelink-128.webp" alt="">CarteLink</span>
+                  <span class="arr">→</span>
+                  <span class="cl-finder__item"><span class="cl-finder__folder"></span>Applications</span>
+                </div>
+              </div>
+            </div></div>
+          </div>
+        </article>
+        <article class="card card--row m-nolift span-4">
+          <span class="step-num">2</span>
+          <h3>Дозволь перший запуск</h3>
+          <p>Збірка не нотаризована Apple. Конфіденційність і безпека → «Усе одно відкрити», або команда нижче.</p>
+          <div class="panel panel--inset">
+            <div class="stage"><div class="at-rise fit" style="--fit-max:320px;--ax:max(20px, 50% - 160px);--ay:32px;--ay-sm:20px">
+              <div class="cl-term" role="img" aria-label="Команда в Терміналі: xattr -dr com.apple.quarantine /Applications/CarteLink.app"><span class="c"># якщо macOS пише «пошкоджена»</span><br><b>$</b> xattr -dr com.apple.quarantine /Applications/CarteLink.app<br><span class="k">готово</span>, відкривай подвійним кліком</div>
+            </div></div>
+          </div>
+        </article>
+        <article class="card card--row m-nolift span-4">
+          <span class="step-num">3</span>
+          <h3>Підключи Claude Code</h3>
+          <p>Адреса й ключ є на сторінці «Огляд». Або натисни «Підключити програму», і CarteLink впише їх сам.</p>
+          <div class="panel panel--inset">
+            <div class="stage"><div class="at-rise fit" style="--fit-max:320px;--ax:max(20px, 50% - 160px);--ay:32px;--ay-sm:20px">
+              <div class="cl-term" role="img" aria-label="Файл ~/.claude/settings.json з ANTHROPIC_BASE_URL http://127.0.0.1:8317 і ключем шлюзу"><span class="c">~/.claude/settings.json</span><br>"env": {<br>&nbsp;&nbsp;"ANTHROPIC_BASE_URL": <span class="k">"http://127.0.0.1:8317"</span>,<br>&nbsp;&nbsp;"ANTHROPIC_AUTH_TOKEN": <span class="k">"cl-…"</span><br>}</div>
+            </div></div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="code" aria-labelledby="code-h">
+    <div class="wrap">
+      <div class="grid">
+        <div class="span-5 stack-5">
+          <h2 id="code-h">Код CarteLink під ліцензією MIT</h2>
+          <p class="t-lead">CarteLink написаний на Rust. Рушій CLIProxyAPI (Go, MIT) вшитий у той самий файл. Читай, змінюй і збирай сам.</p>
+          <ul class="stack-3 cl-facts">
+            <li>Потрібні Rust 1.90 або новіший і Go.</li>
+            <li>macOS: scripts/build-mac-app.sh збирає .app і три .dmg.</li>
+            <li>Windows: target/release/cartelink.exe після збірки.</li>
+          </ul>
+          <a class="link" href="https://github.com/gitkalenyuk/CarteLink">Код на GitHub</a>
+        </div>
+        <div class="frame frame--split frame--lit span-6 start-7">
+          <div class="stage stage--fade-b"><div class="at-rise fit" style="--fit-max:520px;--ax:max(32px, 50% - 260px);--ay:40px;--ay-sm:24px">
+            <div class="ui ui-panel ui-term" data-ui="terminal-run" data-ui-still role="img" aria-label="Термінал: git clone репозиторію CarteLink і cargo build --release, збірка завершена">
+              <div class="ui-term__head">
+                <span class="ui-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span class="ui-term__title">CarteLink</span>
+                <span class="ui-meta">zsh</span>
+                <span class="ui-spacer"></span>
+                <span class="ui-chip ui-chip--plain ui-term__branch"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="3.5" r="1.5"/><circle cx="5" cy="12.5" r="1.5"/><circle cx="11" cy="5.5" r="1.5"/><path d="M5 5v6M11 7c0 2.6-6 1.8-6 4"/></svg>main</span>
+              </div>
+              <div class="ui-term__screen" data-term-screen>
+                <div class="ui-term__track" data-term-track>
+                  <div class="ui-term__ln ui-term__cmd"><span class="ui-term__cwd">CarteLink</span><span class="ui-term__sig">$</span><span class="ui-term__typed" data-term-cmd>cargo build --release</span></div>
+                  <div class="ui-term__ln ui-term__meter" data-term-out data-term-meter><span class="ui-term__bar" style="--p:1"><i></i></span><span class="ui-term__count" data-term-count>7 з 7 кроків</span></div>
+                  <div class="ui-term__ln ui-term__log" data-term-out data-term-step><svg class="ui-term__tick" viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.4 2.8 2.8 6.2-6.4"/></svg><span class="ui-term__path">tokio, axum, hyper</span><span class="ui-term__n">шлюз</span><span class="ui-term__t">crates</span></div>
+                  <div class="ui-term__ln ui-term__log" data-term-out data-term-step><svg class="ui-term__tick" viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.4 2.8 2.8 6.2-6.4"/></svg><span class="ui-term__path">wry, tao, tray-icon</span><span class="ui-term__n">вікно</span><span class="ui-term__t">crates</span></div>
+                  <div class="ui-term__ln ui-term__log" data-term-out data-term-step><svg class="ui-term__tick" viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.4 2.8 2.8 6.2-6.4"/></svg><span class="ui-term__path">enginehost (Go)</span><span class="ui-term__n">рушій</span><span class="ui-term__t">zstd</span></div>
+                  <div class="ui-term__ln ui-term__log" data-term-out data-term-step><svg class="ui-term__tick" viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.4 2.8 2.8 6.2-6.4"/></svg><span class="ui-term__path">third_party/CLIProxyAPI</span><span class="ui-term__n">7.3.20</span><span class="ui-term__t">MIT</span></div>
+                  <div class="ui-term__ln ui-term__log" data-term-out data-term-step><svg class="ui-term__tick" viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.4 2.8 2.8 6.2-6.4"/></svg><span class="ui-term__path">ui/ (вбудовано)</span><span class="ui-term__n">17 мов</span><span class="ui-term__t">html</span></div>
+                  <div class="ui-term__ln ui-term__log" data-term-out data-term-step><svg class="ui-term__tick" viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.4 2.8 2.8 6.2-6.4"/></svg><span class="ui-term__path">cartelink v3.0.0</span><span class="ui-term__n">Rust 2024</span><span class="ui-term__t">release</span></div>
+                  <div class="ui-term__ln ui-term__log" data-term-out data-term-step><svg class="ui-term__tick" viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.4 2.8 2.8 6.2-6.4"/></svg><span class="ui-term__path">target/release</span><span class="ui-term__n">один файл</span><span class="ui-term__t">bin</span></div>
+                  <div class="ui-term__ln ui-term__gap" data-term-out aria-hidden="true"></div>
+                  <div class="ui-term__ln ui-term__done" data-term-out data-term-done><span class="ui-term__ok"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 8.3 2.4 2.4 4.6-5"/></svg></span><b>Finished</b><span class="ui-term__dim">release, один файл</span></div>
+                  <div class="ui-term__ln ui-term__cmd" data-term-next><span class="ui-term__cwd">CarteLink</span><span class="ui-term__sig">$</span><span class="ui-term__typed"></span><i class="ui-term__caret" aria-hidden="true"></i></div>
+                </div>
+              </div>
+            </div>
+          </div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="faq" style="--hm: 2" aria-labelledby="faq-h">
+    <div class="wrap">
+      <div class="grid">
+        <div class="span-5 stack-4">
+          <h2 id="faq-h">Питання</h2>
+          <p class="muted">Не знайшов відповіді: напиши в Issues на GitHub.</p>
+          <a class="link" href="https://github.com/gitkalenyuk/CarteLink/issues">Відкрити Issues</a>
+          <div class="frame frame--lit cl-status">
+            <div class="cl-term" role="img" aria-label="Перевірка в Терміналі: curl до /api/status відповідає версією 3.0.0 і станом рушія"><b>$</b> curl -s 127.0.0.1:8317/api/status<br>{<br>&nbsp;&nbsp;"version": <span class="k">"3.0.0"</span>,<br>&nbsp;&nbsp;"engine": { "running": <span class="k">true</span>, "port": <span class="k">8317</span> },<br>&nbsp;&nbsp;…<br>}</div>
+          </div>
+        </div>
+        <div class="faq span-6 start-7">
+          <div class="faq__item"><h3>Скільки це коштує?</h3><p>Нічого. CarteLink безкоштовний, код відкритий під MIT. Платиш лише за свої акаунти й API, якщо вони платні.</p></div>
+          <div class="faq__item"><h3>Чи треба реєструватися?</h3><p>Ні. Вхід через Telegram прибрали у версії 2.8.0: запустив, і шлюз працює.</p></div>
+          <div class="faq__item"><h3>Чи є CarteLink для Windows?</h3><p>Готової збірки поки немає. Код збирається під Windows командою <code style="white-space:nowrap">cargo build --release</code>.</p></div>
+          <div class="faq__item"><h3>Де лежать мої акаунти?</h3><p>На твоєму Mac, у ~/Library/Application Support/CarteLink. Файли не шифруються, тому нікому не пересилай цю папку.</p></div>
+          <div class="faq__item"><h3>Чому macOS попереджає про CarteLink?</h3><p>Збірка не проходила нотаризацію Apple. Дозволь запуск один раз у «Конфіденційність і безпека».</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer closing footer--statement" id="contact" aria-labelledby="close-h">
+  <div class="wrap">
+    <div class="closing__cta close--word">
+      <div class="section-head--split">
+        <div><h2 id="close-h">Завантаж CarteLink для свого Mac</h2><p class="t-lead">Безкоштовно, версія 3.0.0, macOS 13 і новіші.</p></div>
+        <a class="btn btn--primary" href="#download">Завантажити для macOS<svg class="m-arrow" viewBox="0 0 12 12" aria-hidden="true"><path class="m-arrow__stem" d="M1 6h8"/><path class="m-arrow__head" d="M4.5 2.5 8 6l-3.5 3.5"/></svg></a>
+      </div>
+      <p class="close__word" aria-hidden="true">CarteLink</p>
+    </div>
+    <div class="closing__links">
+      <div class="grid">
+        <div class="span-4 stack-4">
+          <a class="nav__logo" href="#top"><img loading="lazy" src="assets/brand/cartelink-128.webp" alt="" width="24" height="24">CarteLink</a>
+          <p class="footer__lede">Локальний AI-шлюз від YouTube Cartel.</p>
+        </div>
+        <div class="span-2 footer__col"><h3>Шлюз</h3><ul><li><a href="#flow">Потік запитів</a></li><li><a href="#features">Можливості</a></li><li><a href="#tools">Акаунти</a></li></ul></div>
+        <div class="span-2 footer__col"><h3>Встановлення</h3><ul><li><a href="#download">Файли .dmg</a></li><li><a href="#install">Інструкція</a></li><li><a href="#faq">Питання</a></li></ul></div>
+        <div class="span-2 footer__col"><h3>Код</h3><ul><li><a href="https://github.com/gitkalenyuk/CarteLink">GitHub</a></li><li><a href="https://github.com/gitkalenyuk/CarteLink/blob/main/LICENSE">Ліцензія MIT</a></li><li><a href="https://github.com/router-for-me/CLIProxyAPI">CLIProxyAPI</a></li></ul></div>
+        <div class="span-2 footer__col"><h3>Релізи</h3><ul><li><a href="https://github.com/gitkalenyuk/CarteLink/releases/latest">Остання версія</a></li><li><a href="https://github.com/gitkalenyuk/CarteLink/blob/main/CHANGELOG.md">Що змінилось</a></li></ul></div>
+      </div>
+      <div class="footer__legal">
+        <span>&copy; 2026 YouTube Cartel</span>
+        <span>Назви продуктів і логотипи належать їхнім власникам.</span>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<nav class="actionbar" aria-label="Швидкі дії">
+  <a class="btn btn--primary" href="#download">Завантажити для macOS</a>
+</nav>
+
+<script type="module" src="assets/system.js"></script>
+<script type="module" src="assets/motion/motion.js"></script>
+<script type="module" src="assets/layout/layout.js"></script>
+<script type="module" src="assets/diagrams/mount.js"></script>
+</body>
+</html>

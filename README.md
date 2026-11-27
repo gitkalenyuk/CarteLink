@@ -1,12 +1,98 @@
 # CarteLink
 
-**Локальний AI-шлюз від YouTube Cartel.** Один файл, один порт, одне вікно.
+[![Release](https://img.shields.io/github/v/release/gitkalenyuk/CarteLink?label=%D0%B2%D0%B5%D1%80%D1%81%D1%96%D1%8F)](https://github.com/gitkalenyuk/CarteLink/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Site](https://img.shields.io/badge/%D1%81%D0%B0%D0%B9%D1%82-gitkalenyuk.github.io%2FCarteLink-111)](https://gitkalenyuk.github.io/CarteLink/)
+
+**Локальний AI-шлюз від YouTube Cartel.** Один файл, один порт, одне вікно. Безкоштовно й з
+відкритим кодом (MIT).
 
 Збирає твої акаунти й ключі (Google Antigravity, OpenAI Codex, Claude, Kimi, xAI, Meta,
 плагіни Kiro / Copilot / Cursor / WorkBuddy… + 70 OpenAI-сумісних API: OpenRouter, Groq,
 DeepSeek, Ollama…) в одну адресу `http://127.0.0.1:8317` з ротацією акаунтів, підміною
 моделей і чорним списком. Claude Code, Codex, Cursor, Cline, Aider і ще ~20 програм
 підключаються за готовими інструкціями. Вхід не потрібен: запустив — і працює.
+
+**Сайт:** <https://gitkalenyuk.github.io/CarteLink/>
+
+## Завантажити
+
+| Система | Файл |
+|---|---|
+| macOS, Apple Silicon (M1…M5) | [CarteLink-3.0.0-apple-silicon.dmg](https://github.com/gitkalenyuk/CarteLink/releases/download/v3.0.0-mac/CarteLink-3.0.0-apple-silicon.dmg) |
+| macOS, Intel | [CarteLink-3.0.0-intel.dmg](https://github.com/gitkalenyuk/CarteLink/releases/download/v3.0.0-mac/CarteLink-3.0.0-intel.dmg) |
+| macOS, не знаю який (universal) | [CarteLink-3.0.0.dmg](https://github.com/gitkalenyuk/CarteLink/releases/download/v3.0.0-mac/CarteLink-3.0.0.dmg) |
+| Windows | готової збірки поки немає — [збери з коду](#зібрати-з-коду) |
+
+Усі версії: [Releases](https://github.com/gitkalenyuk/CarteLink/releases). Потрібна macOS 13 Ventura або новіша.
+
+## Встановлення
+
+### macOS
+
+1. Відкрий `.dmg` і перетягни **CarteLink** у **Applications** (Програми).
+2. Запусти CarteLink з Програм. Збірка не нотаризована Apple, тому macOS попередить про
+   «невідомого розробника» — це нормально і робиться один раз:
+   - **macOS 15 і новіші:** натисни «Готово» → меню  → Системні параметри →
+     Конфіденційність і безпека → внизу «CarteLink заблоковано…» → **Усе одно відкрити** →
+     пароль Mac → ще раз відкрий CarteLink → **Відкрити**.
+   - **macOS 13–14:** у Програмах клацни CarteLink правою кнопкою → **Відкрити** → **Відкрити**.
+   - **Пише «програма пошкоджена»:** у Терміналі
+     `xattr -dr com.apple.quarantine /Applications/CarteLink.app`, потім відкрий звичайно.
+3. Відкриється вікно CarteLink — шлюз уже працює на `http://127.0.0.1:8317`.
+
+Покроково з картинками й відповідями на питання: [INSTALL-MACOS.md](INSTALL-MACOS.md).
+Хочеш, щоб усе встановив ШІ-агент (Claude Code, Codex): дай йому [INSTALL-MACOS-AI.md](INSTALL-MACOS-AI.md).
+
+### Windows
+
+Готового `.exe` у релізах поки немає. Збери його сам (розділ [нижче](#зібрати-з-коду)) і запусти
+`target\release\cartelink.exe` — відкриється вікно, а CarteLink сховається в трей біля годинника.
+
+## Перший запуск
+
+1. **Додай акаунт або ключ.** Сторінка «Акаунти»: вхід у Google Antigravity, Claude, Codex,
+   Kiro… через браузер. Або «Провайдери»: встав API-ключ OpenRouter, Groq, DeepSeek тощо.
+2. **Підключи програму.** Сторінка «Підключити програму» → вибери Claude Code, Codex, Cursor,
+   Cline… Більшість підключаються одним кліком, для інших є покрокова інструкція.
+3. **Готово.** На сторінці «Огляд» видно, яка модель відповідає зараз, стан акаунтів і лімітів,
+   адресу й ключ.
+
+### Claude Code вручну
+
+Якщо не хочеш одним кліком — додай у `~/.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8317",
+    "ANTHROPIC_AUTH_TOKEN": "<ключ зі сторінки «Огляд»>",
+    "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1"
+  }
+}
+```
+
+Будь-яка OpenAI-сумісна програма: адреса `http://127.0.0.1:8317/v1`, ключ — той самий.
+
+## Зібрати з коду
+
+Потрібні Rust (stable, ≥ 1.90) і Go (версія в `go.mod`).
+
+```
+git clone https://github.com/gitkalenyuk/CarteLink.git
+cd CarteLink
+cargo build --release
+```
+
+Windows: `target\release\cartelink.exe`. macOS: `bash scripts/build-mac-app.sh` → `dist/CarteLink.app`
+і три `.dmg`. Подробиці — у розділах [Build](#build) і [Checks](#checks) нижче.
+
+## Ліцензія
+
+[MIT](LICENSE) © YouTube Cartel. Вбудований рушій [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)
+(`third_party/CLIProxyAPI`) — окремий проєкт під власною ліцензією MIT.
+
+---
 
 ## Architecture (3.0)
 

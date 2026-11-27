@@ -111,7 +111,7 @@
 1. **Залежності.** `git`, Rust (rustup), Go ≥ 1.27, `node`, Xcode Command Line Tools (`xcode-select --install`).
 2. **Код:** `git clone https://github.com/gitkalenyuk/CarteLink.git && cd CarteLink` (якщо вже є — `git pull`).
 3. **Перевірка:** `bash scripts/mac-setup.sh` — тести, clippy, `node --check`, `./cartelink`.
-4. **Реліз:** `bash scripts/build-mac-app.sh` → `dist/CarteLink.app` (universal) і три `.dmg`. Реліз — у приватний
+4. **Реліз:** `bash scripts/build-mac-app.sh` → `dist/CarteLink.app` (universal) і три `.dmg`. Реліз — у публічний
    `gitkalenyuk/CarteLink`, тег `v<версія>-mac`, разом з `INSTALL-MACOS.md` і `INSTALL-MACOS-AI.md`.
 5. **Перевір наживо:** `open dist/CarteLink.app`, потім `curl -s http://127.0.0.1:8317/api/status` → `"version":"3.0.0"`.
    Перевір Cmd+C/Cmd+V у вікні.
@@ -138,7 +138,7 @@
 - Мапінг: ніяких підрядків. Нові аліаси — у `config::TIER_ALIASES`. Провайдери з API-ключем — у `presets.js`, програми — у `clients.js`.
 - `usage-queue` вичитує **лише** бекенд (`tasks::metrics_loop`).
 - Не комітити бінарники, `target/`, `data/`, `dist/`, логи, `.py`, картинки (див. `.gitignore`).
-- Git: коміти на `main`, `origin` = приватний `gitkalenyuk/CarteLink`. `CartelGateGo` — архів (не пушити).
+- Git: коміти на `main`, `origin` = публічний `gitkalenyuk/CarteLink` (MIT, сайт у `docs/` → GitHub Pages). `CartelGateGo` — архів (не пушити).
   Публічний `gitkalenyuk/cartelgate` — лише для релізних білдів. Авто-оновлювача немає.
 - JevRouter видалено назавжди (2026-09-22) — не повертати. OpenCode (Zen/Go) — лише через плагіни магазину.
 - Зайве (тестові скрипти, картинки, старі збірки) — поза репо: `Desktop\CarteLink_extras\`.

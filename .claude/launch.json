@@ -4,7 +4,7 @@
     {
       "name": "cartelink-dev",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "set CARTELINK_HOME=%TEMP%\\cl-dev\\home&& set CARTELINK_CLIENT_HOME=%TEMP%\\cl-dev\\clients&& set CARTELINK_UI_DIR=C:\\Users\\J0hnD03\\Desktop\\VisionGateGo2\\ui&& %TEMP%\\cl-dev\\CarteLink_dev.exe --headless --port 8419"],
+      "runtimeArgs": ["/c", "set CARTELINK_HOME=%TEMP%\\cl-dev\\home&& set CARTELINK_CLIENT_HOME=%TEMP%\\cl-dev\\clients&& set CARTELINK_UI_DIR=%CD%\\ui&& %TEMP%\\cl-dev\\CarteLink_dev.exe --headless --port 8419"],
       "port": 8419
     },
     {

@@ -6,7 +6,7 @@ dist/
 cg-*
 vgate-*
 # runtime data
-data/
+/data/
 e2ehome/
 *.log
 # editor
@@ -24,3 +24,8 @@ tools/
 
 # Rust build output
 /target/
+
+# site checks (taste-skill) — not part of the site
+docs/.taste-skill/
+docs/shots/
+!docs/**/*.png
