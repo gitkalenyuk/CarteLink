@@ -19,14 +19,24 @@ DeepSeek, Ollama…) в одну адресу `http://127.0.0.1:8317` з рот�
 
 | Система | Файл |
 |---|---|
+| Windows 10 / 11 | [CarteLink-3.0.0-windows.exe](https://github.com/gitkalenyuk/CarteLink/releases/download/v3.0.0-mac/CarteLink-3.0.0-windows.exe) |
 | macOS, Apple Silicon (M1…M5) | [CarteLink-3.0.0-apple-silicon.dmg](https://github.com/gitkalenyuk/CarteLink/releases/download/v3.0.0-mac/CarteLink-3.0.0-apple-silicon.dmg) |
 | macOS, Intel | [CarteLink-3.0.0-intel.dmg](https://github.com/gitkalenyuk/CarteLink/releases/download/v3.0.0-mac/CarteLink-3.0.0-intel.dmg) |
 | macOS, не знаю який (universal) | [CarteLink-3.0.0.dmg](https://github.com/gitkalenyuk/CarteLink/releases/download/v3.0.0-mac/CarteLink-3.0.0.dmg) |
-| Windows | готової збірки поки немає — [збери з коду](#зібрати-з-коду) |
 
-Усі версії: [Releases](https://github.com/gitkalenyuk/CarteLink/releases). Потрібна macOS 13 Ventura або новіша.
+Усі версії: [Releases](https://github.com/gitkalenyuk/CarteLink/releases). Mac: потрібна macOS 13 Ventura або новіша.
 
 ## Встановлення
+
+### Windows
+
+1. Завантаж `CarteLink-3.0.0-windows.exe` і запусти його — встановлювати нічого не треба.
+2. Файл не підписаний, тому Windows SmartScreen може показати «Windows захистила ваш ПК»:
+   натисни **Докладніше** → **Усе одно запустити**. Це робиться один раз.
+3. Відкриється вікно CarteLink — шлюз уже працює на `http://127.0.0.1:8317`. Закриття вікна
+   ховає CarteLink у трей біля годинника; вийти — трей → «Вийти».
+
+Поклади exe у постійну папку (не в «Завантаження»), якщо вмикатимеш автозапуск.
 
 ### macOS
 
@@ -43,11 +53,6 @@ DeepSeek, Ollama…) в одну адресу `http://127.0.0.1:8317` з рот�
 
 Покроково з картинками й відповідями на питання: [INSTALL-MACOS.md](INSTALL-MACOS.md).
 Хочеш, щоб усе встановив ШІ-агент (Claude Code, Codex): дай йому [INSTALL-MACOS-AI.md](INSTALL-MACOS-AI.md).
-
-### Windows
-
-Готового `.exe` у релізах поки немає. Збери його сам (розділ [нижче](#зібрати-з-коду)) і запусти
-`target\release\cartelink.exe` — відкриється вікно, а CarteLink сховається в трей біля годинника.
 
 ## Перший запуск
 
